@@ -1,13 +1,76 @@
+# Node.js / JavaScript / TypeScript
 node_modules
+.pnpm-store
+.pnpm-debug.log
+yarn.lock
+package-lock.json
+pnpm-lock.yaml
+
+# Build outputs
 dist
 build
 .target
+out
+*.tsbuildinfo
+
+# Logs
 *.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS files
 .DS_Store
 Thumbs.db
+
+# Environment files
 .env
 .env.local
 .env.*.local
+
+# IDE
 .vscode
 .idea
-*.tsbuildinfo
+
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv
+.venv
+env
+ENV
+.eggs
+*.egg
+*.egg-info
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Java / JVM
+target
+.gradle
+.mvn
+
+# Go
+vendor
+
+# Rust
+target
+Cargo.lock
+
+# PHP
+vendor
+
+# Ruby
+vendor/bundle
+
+# .NET
+bin
+obj
+packages
+
+# Swift / CocoaPods
+Pods
+.build
