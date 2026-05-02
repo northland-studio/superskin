@@ -1,0 +1,137 @@
+.editor {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  background: #fafafa;
+  padding: 16px;
+  border-radius: 8px;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 12px;
+  background: white;
+  border-radius: 6px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.tools {
+  display: flex;
+  gap: 4px;
+}
+
+.toolButton {
+  padding: 8px 16px;
+  border: 1px solid #d9d9d9;
+  background: white;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.toolButton:hover {
+  border-color: #0055B9;
+  color: #0055B9;
+}
+
+.toolButton.active {
+  background: #0055B9;
+  color: white;
+  border-color: #0055B9;
+}
+
+.colorPicker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.colorPicker input[type="color"] {
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 1px solid #d9d9d9;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.colorPreview {
+  width: 40px;
+  height: 40px;
+  border: 1px solid #d9d9d9;
+  border-radius: 4px;
+  background-image: linear-gradient(45deg, #ccc 25%, transparent 25%),
+    linear-gradient(-45deg, #ccc 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #ccc 75%),
+    linear-gradient(-45deg, transparent 75%, #ccc 75%);
+  background-size: 10px 10px;
+  background-position: 0 0, 0 5px, 5px -5px, -5px 0px;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+}
+
+.actions button {
+  padding: 8px 16px;
+  border: 1px solid #d9d9d9;
+  background: white;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.actions button:hover:not(:disabled) {
+  border-color: #0055B9;
+  color: #0055B9;
+}
+
+.actions button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.zoom {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.zoom button {
+  width: 32px;
+  height: 32px;
+  border: 1px solid #d9d9d9;
+  background: white;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 16px;
+}
+
+.zoom span {
+  min-width: 50px;
+  text-align: center;
+}
+
+.canvasContainer {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  overflow: auto;
+  background: #e8e8e8;
+  border-radius: 6px;
+  padding: 20px;
+  transform-origin: center;
+  transition: transform 0.2s;
+}
+
+.canvas {
+  image-rendering: pixelated;
+  cursor: crosshair;
+  background: white;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}

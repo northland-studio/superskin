@@ -1,4 +1,4 @@
-import { Controller, Post, Body, Get, UseGuards, Request } from '@nestjs/common';
+import { Controller, Post, Body, Get, UseGuards, Request, Query } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
 import { RegisterDto, LoginDto } from './dto/auth.dto';
@@ -27,5 +27,26 @@ export class AuthController {
   @ApiOperation({ summary: '获取当前用户信息' })
   async getProfile(@Request() req) {
     return req.user;
+  }
+
+  @Post('verify-email')
+  @ApiOperation({ summary: '验证邮箱' })
+  async verifyEmail(@Body('token') token: string) {
+    return this.authService.verifyEmail(token);
+  }
+
+  @Post('request-password-reset')
+  @ApiOperation({ summary: '请求重置密码' })
+  async requestPasswordReset(@Body('email') email: string) {
+    return this.authService.requestPasswordReset(email);
+  }
+
+  @Post('reset-password')
+  @ApiOperation({ summary: '重置密码' })
+  async resetPassword(
+    @Body('token') token: string,
+    @Body('password') password: string
+  ) {
+    return this.authService.resetPassword(token, password);
   }
 }
