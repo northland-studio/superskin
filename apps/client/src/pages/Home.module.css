@@ -1,0 +1,35 @@
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.hero {
+  text-align: center;
+  padding: 48px 0;
+}
+
+.title {
+  color: #0055B9 !important;
+  margin-bottom: 16px !important;
+}
+
+.subtitle {
+  font-size: 18px;
+  color: #666;
+  margin-bottom: 32px !important;
+}
+
+.features {
+  margin-top: 48px;
+}
+
+.featureCard {
+  text-align: center;
+  padding: 24px;
+}
+
+.icon {
+  font-size: 48px;
+  color: #0055B9;
+  margin-bottom: 16px;
+}

@@ -1,0 +1,62 @@
+.container {
+  padding: 16px;
+}
+
+.card {
+  margin-bottom: 24px;
+}
+
+.uploader {
+  min-height: 300px;
+}
+
+.uploadPlaceholder {
+  padding: 40px;
+  text-align: center;
+}
+
+.uploadIcon {
+  font-size: 48px;
+  color: #0055B9;
+  margin-bottom: 16px;
+}
+
+.hint {
+  color: #999;
+  font-size: 12px;
+}
+
+.previewImage {
+  max-width: 100%;
+  max-height: 280px;
+  object-fit: contain;
+}
+
+.skinPreview {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 300px;
+  background: #f5f5f5;
+  border-radius: 8px;
+  padding: 24px;
+}
+
+.canvas {
+  display: none;
+}
+
+.skinImage {
+  width: 256px;
+  height: 256px;
+  image-rendering: pixelated;
+  border: 1px solid #ddd;
+}
+
+.toolsCard {
+  margin-top: 24px;
+}
+
+.toolItem {
+  padding: 0 16px;
+}
