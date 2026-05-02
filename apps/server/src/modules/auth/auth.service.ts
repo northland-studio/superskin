@@ -4,7 +4,6 @@ import { PrismaService } from '@/common/prisma/prisma.service';
 import { MailService } from '../mail/mail.service';
 import { RegisterDto, LoginDto } from './dto/auth.dto';
 import * as bcrypt from 'bcrypt';
-import { v4 as uuidv4 } from 'uuid';
 
 @Injectable()
 export class AuthService {
@@ -13,6 +12,10 @@ export class AuthService {
     private jwtService: JwtService,
     private mailService: MailService
   ) {}
+
+  private generateVerificationCode(): string {
+    return Math.floor(100000 + Math.random() * 900000).toString();
+  }
 
   async register(dto: RegisterDto) {
     const existingUser = await this.prisma.user.findFirst({
@@ -26,7 +29,7 @@ export class AuthService {
     }
 
     const hashedPassword = await bcrypt.hash(dto.password, 10);
-    const verificationToken = uuidv4();
+    const verificationCode = this.generateVerificationCode();
 
     const user = await this.prisma.user.create({
       data: {
@@ -34,11 +37,11 @@ export class AuthService {
         email: dto.email,
         password: hashedPassword,
         emailVerified: false,
-        verificationToken,
+        verificationToken: verificationCode,
       },
     });
 
-    await this.mailService.sendVerificationEmail(dto.email, dto.username, verificationToken);
+    await this.mailService.sendVerificationEmail(dto.email, dto.username, verificationCode);
 
     const token = this.generateToken(user.id);
 
@@ -51,7 +54,7 @@ export class AuthService {
         emailVerified: user.emailVerified,
       },
       token,
-      message: '注册成功，验证邮件已发送到您的邮箱',
+      message: '注册成功，验证码已发送到您的邮箱',
     };
   }
 
@@ -84,13 +87,21 @@ export class AuthService {
     };
   }
 
-  async verifyEmail(token: string) {
-    const user = await this.prisma.user.findFirst({
-      where: { verificationToken: token },
+  async verifyEmail(email: string, code: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { email },
     });
 
     if (!user) {
-      throw new BadRequestException('无效的验证链接');
+      throw new BadRequestException('用户不存在');
+    }
+
+    if (user.emailVerified) {
+      throw new BadRequestException('邮箱已验证');
+    }
+
+    if (user.verificationToken !== code) {
+      throw new BadRequestException('验证码错误');
     }
 
     await this.prisma.user.update({
@@ -106,6 +117,33 @@ export class AuthService {
     return { message: '邮箱验证成功' };
   }
 
+  async resendVerificationCode(email: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { email },
+    });
+
+    if (!user) {
+      throw new BadRequestException('用户不存在');
+    }
+
+    if (user.emailVerified) {
+      throw new BadRequestException('邮箱已验证');
+    }
+
+    const verificationCode = this.generateVerificationCode();
+
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: {
+        verificationToken: verificationCode,
+      },
+    });
+
+    await this.mailService.sendVerificationEmail(email, user.username, verificationCode);
+
+    return { message: '验证码已重新发送' };
+  }
+
   async requestPasswordReset(email: string) {
     const user = await this.prisma.user.findUnique({
       where: { email },
@@ -115,32 +153,32 @@ export class AuthService {
       return { message: '如果该邮箱已注册，您将收到重置密码的邮件' };
     }
 
-    const resetToken = uuidv4();
-    const resetTokenExpiry = new Date(Date.now() + 3600000);
+    const resetCode = this.generateVerificationCode();
 
     await this.prisma.user.update({
       where: { id: user.id },
       data: {
-        resetToken,
-        resetTokenExpiry,
+        resetToken: resetCode,
+        resetTokenExpiry: new Date(Date.now() + 3600000),
       },
     });
 
-    await this.mailService.sendPasswordResetEmail(email, user.username, resetToken);
+    await this.mailService.sendPasswordResetEmail(email, user.username, resetCode);
 
     return { message: '如果该邮箱已注册，您将收到重置密码的邮件' };
   }
 
-  async resetPassword(token: string, newPassword: string) {
+  async resetPassword(email: string, code: string, newPassword: string) {
     const user = await this.prisma.user.findFirst({
       where: {
-        resetToken: token,
+        email,
+        resetToken: code,
         resetTokenExpiry: { gt: new Date() },
       },
     });
 
     if (!user) {
-      throw new BadRequestException('无效或已过期的重置链接');
+      throw new BadRequestException('验证码无效或已过期');
     }
 
     const hashedPassword = await bcrypt.hash(newPassword, 10);

@@ -1,8 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as nodemailer from 'nodemailer';
-import * as fs from 'fs';
-import * as path from 'path';
 
 @Injectable()
 export class MailService {
@@ -20,30 +18,24 @@ export class MailService {
     });
   }
 
-  async sendVerificationEmail(email: string, username: string, token: string): Promise<void> {
-    const baseUrl = this.configService.get<string>('APP_URL') || 'http://localhost:1420';
-    const verificationUrl = `${baseUrl}/verify-email?token=${token}`;
-
-    const html = this.getVerificationEmailTemplate(username, verificationUrl);
+  async sendVerificationEmail(email: string, username: string, code: string): Promise<void> {
+    const html = this.getVerificationEmailTemplate(username, code);
 
     await this.transporter.sendMail({
       from: `"SuperSkin" <${this.configService.get<string>('SMTP_USER')}>`,
       to: email,
-      subject: 'SuperSkin - 验证您的邮箱',
+      subject: 'SuperSkin - 邮箱验证码',
       html,
     });
   }
 
-  async sendPasswordResetEmail(email: string, username: string, token: string): Promise<void> {
-    const baseUrl = this.configService.get<string>('APP_URL') || 'http://localhost:1420';
-    const resetUrl = `${baseUrl}/reset-password?token=${token}`;
-
-    const html = this.getPasswordResetEmailTemplate(username, resetUrl);
+  async sendPasswordResetEmail(email: string, username: string, code: string): Promise<void> {
+    const html = this.getPasswordResetEmailTemplate(username, code);
 
     await this.transporter.sendMail({
       from: `"SuperSkin" <${this.configService.get<string>('SMTP_USER')}>`,
       to: email,
-      subject: 'SuperSkin - 重置密码',
+      subject: 'SuperSkin - 密码重置验证码',
       html,
     });
   }
@@ -59,7 +51,7 @@ export class MailService {
     });
   }
 
-  private getVerificationEmailTemplate(username: string, verificationUrl: string): string {
+  private getVerificationEmailTemplate(username: string, code: string): string {
     return `
       <!DOCTYPE html>
       <html>
@@ -71,8 +63,8 @@ export class MailService {
           .header { text-align: center; margin-bottom: 40px; }
           .logo { font-size: 28px; font-weight: bold; color: #0055B9; }
           .content { background: #f9f9f9; border-radius: 8px; padding: 40px; }
-          .button { display: inline-block; background: #0055B9; color: white; padding: 14px 32px; 
-                    border-radius: 6px; text-decoration: none; font-weight: 500; }
+          .code-box { background: #0055B9; color: white; padding: 20px 40px; border-radius: 8px; 
+                      font-size: 32px; letter-spacing: 8px; text-align: center; margin: 24px 0; }
           .footer { text-align: center; margin-top: 40px; color: #666; font-size: 14px; }
         </style>
       </head>
@@ -83,16 +75,13 @@ export class MailService {
           </div>
           <div class="content">
             <h2>您好，${username}！</h2>
-            <p>感谢您注册 SuperSkin。请点击下方按钮验证您的邮箱地址：</p>
-            <p style="text-align: center; margin: 32px 0;">
-              <a href="${verificationUrl}" class="button">验证邮箱</a>
-            </p>
-            <p style="color: #666; font-size: 14px;">
-              如果按钮无法点击，请复制以下链接到浏览器：<br>
-              <a href="${verificationUrl}">${verificationUrl}</a>
+            <p>感谢您注册 SuperSkin。请使用以下验证码完成邮箱验证：</p>
+            <div class="code-box">${code}</div>
+            <p style="color: #666; font-size: 14px; text-align: center;">
+              此验证码将在 24 小时后过期。
             </p>
             <p style="color: #999; font-size: 12px; margin-top: 24px;">
-              此链接将在 24 小时后过期。如果您没有注册 SuperSkin，请忽略此邮件。
+              如果您没有注册 SuperSkin，请忽略此邮件。
             </p>
           </div>
           <div class="footer">
@@ -104,7 +93,7 @@ export class MailService {
     `;
   }
 
-  private getPasswordResetEmailTemplate(username: string, resetUrl: string): string {
+  private getPasswordResetEmailTemplate(username: string, code: string): string {
     return `
       <!DOCTYPE html>
       <html>
@@ -116,8 +105,8 @@ export class MailService {
           .header { text-align: center; margin-bottom: 40px; }
           .logo { font-size: 28px; font-weight: bold; color: #0055B9; }
           .content { background: #f9f9f9; border-radius: 8px; padding: 40px; }
-          .button { display: inline-block; background: #0055B9; color: white; padding: 14px 32px; 
-                    border-radius: 6px; text-decoration: none; font-weight: 500; }
+          .code-box { background: #0055B9; color: white; padding: 20px 40px; border-radius: 8px; 
+                      font-size: 32px; letter-spacing: 8px; text-align: center; margin: 24px 0; }
           .footer { text-align: center; margin-top: 40px; color: #666; font-size: 14px; }
         </style>
       </head>
@@ -128,16 +117,13 @@ export class MailService {
           </div>
           <div class="content">
             <h2>您好，${username}！</h2>
-            <p>我们收到了重置您密码的请求。请点击下方按钮设置新密码：</p>
-            <p style="text-align: center; margin: 32px 0;">
-              <a href="${resetUrl}" class="button">重置密码</a>
-            </p>
-            <p style="color: #666; font-size: 14px;">
-              如果按钮无法点击，请复制以下链接到浏览器：<br>
-              <a href="${resetUrl}">${resetUrl}</a>
+            <p>我们收到了重置您密码的请求。请使用以下验证码重置密码：</p>
+            <div class="code-box">${code}</div>
+            <p style="color: #666; font-size: 14px; text-align: center;">
+              此验证码将在 1 小时后过期。
             </p>
             <p style="color: #999; font-size: 12px; margin-top: 24px;">
-              此链接将在 1 小时后过期。如果您没有请求重置密码，请忽略此邮件。
+              如果您没有请求重置密码，请忽略此邮件。
             </p>
           </div>
           <div class="footer">

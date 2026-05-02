@@ -1,4 +1,4 @@
-import { Controller, Post, Body, Get, UseGuards, Request, Query } from '@nestjs/common';
+import { Controller, Post, Body, Get, UseGuards, Request } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
 import { RegisterDto, LoginDto } from './dto/auth.dto';
@@ -31,8 +31,17 @@ export class AuthController {
 
   @Post('verify-email')
   @ApiOperation({ summary: '验证邮箱' })
-  async verifyEmail(@Body('token') token: string) {
-    return this.authService.verifyEmail(token);
+  async verifyEmail(
+    @Body('email') email: string,
+    @Body('code') code: string
+  ) {
+    return this.authService.verifyEmail(email, code);
+  }
+
+  @Post('resend-verification')
+  @ApiOperation({ summary: '重新发送验证码' })
+  async resendVerificationCode(@Body('email') email: string) {
+    return this.authService.resendVerificationCode(email);
   }
 
   @Post('request-password-reset')
@@ -44,9 +53,10 @@ export class AuthController {
   @Post('reset-password')
   @ApiOperation({ summary: '重置密码' })
   async resetPassword(
-    @Body('token') token: string,
+    @Body('email') email: string,
+    @Body('code') code: string,
     @Body('password') password: string
   ) {
-    return this.authService.resetPassword(token, password);
+    return this.authService.resetPassword(email, code, password);
   }
 }

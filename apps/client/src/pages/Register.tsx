@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Form, Input, Button, Card, Typography, message } from 'antd';
 import { UserOutlined, LockOutlined, MailOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
+import { apiService } from '@/services/api';
 import styles from './Auth.module.css';
 
 const { Title } = Typography;
@@ -25,11 +26,12 @@ function Register() {
 
     setLoading(true);
     try {
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-      message.success('注册成功！请登录');
-      navigate('/login');
-    } catch {
-      message.error('注册失败，请稍后重试');
+      await apiService.register(values.username, values.email, values.password);
+      message.success('注册成功！验证码已发送到您的邮箱');
+      navigate(`/verify-email?email=${encodeURIComponent(values.email)}`);
+    } catch (error: unknown) {
+      const err = error as { response?: { data?: { message?: string } } };
+      message.error(err.response?.data?.message || '注册失败，请稍后重试');
     } finally {
       setLoading(false);
     }

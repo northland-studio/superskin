@@ -60,6 +60,26 @@ class ApiService {
     return response.data;
   }
 
+  async verifyEmail(email: string, code: string) {
+    const response = await this.client.post('/auth/verify-email', { email, code });
+    return response.data;
+  }
+
+  async resendVerificationCode(email: string) {
+    const response = await this.client.post('/auth/resend-verification', { email });
+    return response.data;
+  }
+
+  async requestPasswordReset(email: string) {
+    const response = await this.client.post('/auth/request-password-reset', { email });
+    return response.data;
+  }
+
+  async resetPassword(email: string, code: string, password: string) {
+    const response = await this.client.post('/auth/reset-password', { email, code, password });
+    return response.data;
+  }
+
   async updateProfile(data: { username?: string; email?: string; avatar?: string }) {
     const response = await this.client.put('/users/me', data);
     return response.data;
@@ -117,21 +137,6 @@ class ApiService {
         'Content-Type': 'multipart/form-data',
       },
     });
-    return response.data;
-  }
-
-  async verifyEmail(token: string) {
-    const response = await this.client.post('/auth/verify-email', { token });
-    return response.data;
-  }
-
-  async requestPasswordReset(email: string) {
-    const response = await this.client.post('/auth/request-password-reset', { email });
-    return response.data;
-  }
-
-  async resetPassword(token: string, password: string) {
-    const response = await this.client.post('/auth/reset-password', { token, password });
     return response.data;
   }
 }
