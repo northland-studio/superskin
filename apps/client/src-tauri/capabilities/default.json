@@ -21,14 +21,16 @@
         { "path": "$APPLOCALDATA/**" }
       ]
     },
+    "http:allow-fetch",
+    "http:allow-fetch-send",
+    "http:allow-fetch-read-body",
+    "http:allow-fetch-cancel",
     {
       "identifier": "http:default",
       "allow": [
         { "url": "http://**" },
         { "url": "https://**" }
       ]
-    },
-    "http:allow-fetch",
-    "http:allow-fetch-send"
+    }
   ]
 }

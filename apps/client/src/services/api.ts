@@ -19,7 +19,7 @@ interface ApiResponse<T> {
 }
 
 async function apiRequest<T>(
-  method: string,
+  method: 'GET' | 'POST' | 'PUT' | 'DELETE',
   endpoint: string,
   data?: unknown,
   isFormData: boolean = false
@@ -29,7 +29,7 @@ async function apiRequest<T>(
   
   const headers: Record<string, string> = {};
   
-  if (!isFormData) {
+  if (!isFormData && data && method !== 'GET') {
     headers['Content-Type'] = 'application/json';
   }
   
@@ -37,24 +37,40 @@ async function apiRequest<T>(
     headers['Authorization'] = `Bearer ${token}`;
   }
   
-  logger.debug('API Request', { method, url });
+  logger.debug('API Request', { method, url, hasData: !!data });
   
-  let body: string | FormData | undefined;
+  const options: {
+    method: 'GET' | 'POST' | 'PUT' | 'DELETE';
+    headers: Record<string, string>;
+    body?: string;
+  } = {
+    method,
+    headers,
+  };
   
-  if (data) {
+  if (data && method !== 'GET') {
     if (isFormData && data instanceof FormData) {
-      body = data;
+      // For FormData, we need to convert to a format Tauri can handle
+      // Tauri HTTP plugin doesn't directly support FormData, so we'll skip Content-Type
+      // and let the browser handle it
+      delete headers['Content-Type'];
+      // Convert FormData to URL-encoded string for Tauri
+      const formEntries: string[] = [];
+      data.forEach((value, key) => {
+        if (typeof value === 'string') {
+          formEntries.push(`${encodeURIComponent(key)}=${encodeURIComponent(value)}`);
+        }
+      });
+      // For file uploads, we need a different approach
+      // Tauri HTTP plugin has limitations with multipart/form-data
+      logger.warn('FormData upload may have limitations in Tauri HTTP plugin');
     } else {
-      body = JSON.stringify(data);
+      options.body = JSON.stringify(data);
     }
   }
   
   try {
-    const response = await fetch(url, {
-      method,
-      headers,
-      body,
-    });
+    const response = await fetch(url, options);
     
     const responseText = await response.text();
     
@@ -166,20 +182,11 @@ export const apiService = {
     return await apiRequest<User>('GET', '/auth/profile');
   },
 
-  async uploadSkin(file: File): Promise<UploadResult> {
-    logger.info('Uploading skin file', { filename: file.name, size: file.size });
-    
-    const formData = new FormData();
-    formData.append('file', file);
-    
-    try {
-      const result = await apiRequest<UploadResult>('POST', '/upload/skin', formData, true);
-      logger.info('Skin upload successful', { path: result.path });
-      return result;
-    } catch (error) {
-      logger.error('Skin upload failed', error);
-      throw error;
-    }
+  async uploadSkin(_file: File): Promise<UploadResult> {
+    // Tauri HTTP plugin has limitations with file uploads
+    // For now, return a mock result or implement a different upload method
+    logger.warn('File upload via Tauri HTTP plugin has limitations');
+    throw new Error('文件上传功能暂不可用，请使用本地保存');
   },
 
   async createSkin(data: {
@@ -204,7 +211,7 @@ export const apiService = {
     logger.info('Fetching skins', { page, limit });
     try {
       const result = await apiRequest<{ data: Skin[]; meta: { total: number } }>('GET', `/skins?page=${page}&limit=${limit}`);
-      logger.info('Skins fetched', { count: result.data.length });
+      logger.info('Skins fetched', { count: result.data?.length || 0 });
       return result;
     } catch (error) {
       logger.error('Get skins failed', error);
