@@ -31,12 +31,14 @@ import {
   SkinOutlined,
 } from '@ant-design/icons';
 import type { UploadFile } from 'antd/es/upload/interface';
-import { PixelEditor, SkinPreview3D } from '@/components';
-import { skinConverter, ConversionOptions, ConversionResult } from '@/utils';
+import { PixelEditor, SkinPreview3D, BodyPartSelector } from '@/components';
+import { skinConverter, ConversionOptions, ConversionResult, SkinConverter } from '@/utils';
 import { useSkinStore } from '@/stores/skinStore';
 import { useUserStore } from '@/stores/userStore';
 import { apiService } from '@/services/api';
 import { logger } from '@/utils/logger';
+import { BoundingBox } from '@/utils/imageProcessor';
+import { applySegmentationMask } from '@/utils/poseDetector';
 import styles from './Editor.module.css';
 
 const { Text } = Typography;
@@ -63,6 +65,8 @@ function Editor() {
   const [isConverting, setIsConverting] = useState(false);
   const [conversionProgress, setConversionProgress] = useState<ConversionProgress | null>(null);
   const [editingSkinId, setEditingSkinId] = useState<string | null>(null);
+  const [manualMode, setManualMode] = useState(false);
+  const [showSelector, setShowSelector] = useState(false);
   
   const { saveSkin, skins, loadSkins, updateSkin } = useSkinStore();
   const { user, token } = useUserStore();
@@ -120,11 +124,77 @@ function Editor() {
     reader.onload = async (e) => {
       const imageSrc = e.target?.result as string;
       setImage(imageSrc);
-      await convertToSkin(imageSrc);
+      setConversionResult(null);
+      if (manualMode) {
+        setShowSelector(true);
+      } else {
+        await convertToSkin(imageSrc);
+      }
     };
     reader.readAsDataURL(file as unknown as File);
     return false;
   };
+
+  const handleManualConfirm = useCallback(async (parts: Map<string, BoundingBox>) => {
+    if (!image) return;
+    setIsConverting(true);
+    setConversionProgress({ stage: '处理中', progress: 30 });
+    setShowSelector(false);
+
+    try {
+      const img = new window.Image();
+      img.src = image;
+      await new Promise<void>((resolve) => { img.onload = () => resolve(); });
+
+      const canvas = document.createElement('canvas');
+      canvas.width = img.width;
+      canvas.height = img.height;
+      const ctx = canvas.getContext('2d')!;
+      ctx.drawImage(img, 0, 0);
+      let imageData = ctx.getImageData(0, 0, img.width, img.height);
+
+      if (options.removeBackground && options.useSegmentation) {
+        setConversionProgress({ stage: '去除背景', progress: 50 });
+        const { detectPose } = await import('@/utils/poseDetector');
+        const poseResult = await detectPose(imageData);
+        if (poseResult?.segmentationMask) {
+          imageData = applySegmentationMask(imageData, poseResult.segmentationMask, 0.5);
+        }
+      }
+
+      setConversionProgress({ stage: '生成皮肤', progress: 70 });
+      const skinData = SkinConverter.buildSkinFromParts(imageData, parts, true);
+
+      setConversionProgress({ stage: '导出', progress: 90 });
+      const tempCanvas = document.createElement('canvas');
+      tempCanvas.width = 64; tempCanvas.height = 64;
+      tempCanvas.getContext('2d')!.putImageData(skinData, 0, 0);
+      const skinUrl = tempCanvas.toDataURL('image/png');
+
+      const previewCanvas = document.createElement('canvas');
+      previewCanvas.width = 256; previewCanvas.height = 256;
+      const previewCtx = previewCanvas.getContext('2d')!;
+      previewCtx.imageSmoothingEnabled = false;
+      previewCtx.drawImage(tempCanvas, 0, 0, 256, 256);
+      const previewUrl = previewCanvas.toDataURL('image/png');
+
+      setConversionResult({
+        skinData,
+        skinUrl,
+        previewUrl,
+        bodyParts: parts,
+        boundingBox: { x: 0, y: 0, width: img.width, height: img.height },
+      });
+
+      setConversionProgress({ stage: '完成', progress: 100 });
+      message.success('皮肤转换成功！');
+    } catch (error) {
+      logger.error('Manual conversion failed', error);
+      message.error('转换失败，请重试');
+    } finally {
+      setIsConverting(false);
+    }
+  }, [image, options]);
 
   const handleSkinUpload = async (file: UploadFile) => {
     const reader = new FileReader();
@@ -398,10 +468,22 @@ function Editor() {
             {importMode === 'image' && (
               <div className={styles.optionsPanel}>
                 <div className={styles.optionItem}>
-                  <span>使用AI检测</span>
+                  <span>手动框选模式</span>
+                  <Switch
+                    checked={manualMode}
+                    onChange={(checked: boolean) => {
+                      setManualMode(checked);
+                      setShowSelector(false);
+                      setConversionResult(null);
+                    }}
+                  />
+                </div>
+                <div className={styles.optionItem}>
+                  <span>使用AI自动检测</span>
                   <Switch
                     checked={options.useAI}
                     onChange={(checked: boolean) => handleOptionChange('useAI', checked)}
+                    disabled={manualMode}
                   />
                 </div>
                 <div className={styles.optionItem}>
@@ -423,6 +505,15 @@ function Editor() {
                     />
                   </div>
                 )}
+              </div>
+            )}
+
+            {showSelector && image && (
+              <div className={styles.selectorContainer}>
+                <BodyPartSelector
+                  imageSrc={image}
+                  onConfirm={handleManualConfirm}
+                />
               </div>
             )}
           </Card>

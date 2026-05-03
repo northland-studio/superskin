@@ -145,3 +145,10 @@
 .settingItem:last-child {
   border-bottom: none;
 }
+
+.selectorContainer {
+  margin-top: 16px;
+  padding: 12px;
+  background: #222;
+  border-radius: 8px;
+}

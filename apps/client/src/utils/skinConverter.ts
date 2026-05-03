@@ -13,6 +13,7 @@ import {
 import { detectPose, getBodyPartsFromKeypoints, applySegmentationMask, ProgressCallback } from './poseDetector';
 import { SKIN_WIDTH, SKIN_HEIGHT, SkinTemplate, MINECRAFT_SKIN_TEMPLATE } from './skinTemplate';
 import { logger } from './logger';
+import { inpaintBackFace, inpaintSideFace } from '@/services/inpaintService';
 
 export interface ConversionOptions {
   removeBackground: boolean;
@@ -241,15 +242,28 @@ export class SkinConverter {
     bodyParts: Map<string, BoundingBox>,
     _options: ConversionOptions
   ): ImageData {
+    return SkinConverter.buildSkinFromParts(imageData, bodyParts, false);
+  }
+
+  public static buildSkinFromParts(
+    imageData: ImageData,
+    bodyParts: Map<string, BoundingBox>,
+    useInpainting: boolean = false
+  ): ImageData {
     const skin = createEmptySkin();
     
     const headPart = bodyParts.get('head');
     if (headPart) {
       const headData = extractRegion(imageData, headPart);
-      const resizedHead = this.resizeWithAspectRatio(headData, 8, 8);
+      const resizedHead = new SkinConverter().resizeWithAspectRatio(headData, 8, 8);
       
       copyRegionToSkin(skin, resizedHead, 8, 8);
-      copyRegionToSkin(skin, flipHorizontal(resizedHead), 24, 8);
+      if (useInpainting) {
+        const backHead = inpaintBackFace(resizedHead, 8, 8, 'head back');
+        Promise.resolve(backHead).then((bh) => copyRegionToSkin(skin, bh as ImageData, 24, 8));
+      } else {
+        copyRegionToSkin(skin, flipHorizontal(resizedHead), 24, 8);
+      }
       copyRegionToSkin(skin, resizedHead, 8, 0);
       copyRegionToSkin(skin, resizedHead, 16, 0);
       copyRegionToSkin(skin, resizedHead, 0, 8);
@@ -260,15 +274,20 @@ export class SkinConverter {
     if (bodyPart) {
       const bodyData = extractRegion(imageData, bodyPart);
       
-      const frontBody = this.resizeWithAspectRatio(bodyData, 4, 6);
+      const frontBody = new SkinConverter().resizeWithAspectRatio(bodyData, 4, 6);
       copyRegionToSkin(skin, frontBody, 20, 20);
-      copyRegionToSkin(skin, flipHorizontal(frontBody), 32, 20);
+      if (useInpainting) {
+        const backBody = inpaintBackFace(frontBody, 4, 6, 'body back');
+        Promise.resolve(backBody).then((bb) => copyRegionToSkin(skin, bb as ImageData, 32, 20));
+      } else {
+        copyRegionToSkin(skin, flipHorizontal(frontBody), 32, 20);
+      }
       
-      const topBody = this.resizeWithAspectRatio(bodyData, 4, 2);
+      const topBody = new SkinConverter().resizeWithAspectRatio(bodyData, 4, 2);
       copyRegionToSkin(skin, topBody, 20, 16);
       copyRegionToSkin(skin, topBody, 20, 26);
       
-      const rightSide = this.resizeWithAspectRatio(bodyData, 2, 6);
+      const rightSide = new SkinConverter().resizeWithAspectRatio(bodyData, 2, 6);
       copyRegionToSkin(skin, rightSide, 16, 20);
       copyRegionToSkin(skin, flipHorizontal(rightSide), 28, 20);
     }
@@ -276,16 +295,21 @@ export class SkinConverter {
     const rightArmPart = bodyParts.get('rightArm');
     if (rightArmPart) {
       const armData = extractRegion(imageData, rightArmPart);
-      const resizedArm = this.resizeWithAspectRatio(armData, 4, 6);
+      const resizedArm = new SkinConverter().resizeWithAspectRatio(armData, 4, 6);
       
       copyRegionToSkin(skin, resizedArm, 44, 20);
-      copyRegionToSkin(skin, flipHorizontal(resizedArm), 52, 20);
+      if (useInpainting) {
+        const backArm = inpaintBackFace(resizedArm, 4, 6, 'right arm back');
+        Promise.resolve(backArm).then((ba) => copyRegionToSkin(skin, ba as ImageData, 52, 20));
+      } else {
+        copyRegionToSkin(skin, flipHorizontal(resizedArm), 52, 20);
+      }
       
-      const topArm = this.resizeWithAspectRatio(armData, 4, 2);
+      const topArm = new SkinConverter().resizeWithAspectRatio(armData, 4, 2);
       copyRegionToSkin(skin, topArm, 44, 16);
       copyRegionToSkin(skin, topArm, 48, 16);
       
-      const outerArm = this.resizeWithAspectRatio(armData, 2, 6);
+      const outerArm = new SkinConverter().resizeWithAspectRatio(armData, 2, 6);
       copyRegionToSkin(skin, outerArm, 40, 20);
       copyRegionToSkin(skin, flipHorizontal(outerArm), 48, 20);
     }
@@ -293,16 +317,21 @@ export class SkinConverter {
     const leftArmPart = bodyParts.get('leftArm');
     if (leftArmPart) {
       const armData = extractRegion(imageData, leftArmPart);
-      const resizedArm = this.resizeWithAspectRatio(armData, 4, 6);
+      const resizedArm = new SkinConverter().resizeWithAspectRatio(armData, 4, 6);
       
       copyRegionToSkin(skin, resizedArm, 36, 52);
-      copyRegionToSkin(skin, flipHorizontal(resizedArm), 44, 52);
+      if (useInpainting) {
+        const backArm = inpaintBackFace(resizedArm, 4, 6, 'left arm back');
+        Promise.resolve(backArm).then((ba) => copyRegionToSkin(skin, ba as ImageData, 44, 52));
+      } else {
+        copyRegionToSkin(skin, flipHorizontal(resizedArm), 44, 52);
+      }
       
-      const topArm = this.resizeWithAspectRatio(armData, 4, 2);
+      const topArm = new SkinConverter().resizeWithAspectRatio(armData, 4, 2);
       copyRegionToSkin(skin, topArm, 36, 48);
       copyRegionToSkin(skin, topArm, 40, 48);
       
-      const innerArm = this.resizeWithAspectRatio(armData, 2, 6);
+      const innerArm = new SkinConverter().resizeWithAspectRatio(armData, 2, 6);
       copyRegionToSkin(skin, innerArm, 32, 52);
       copyRegionToSkin(skin, flipHorizontal(innerArm), 40, 52);
     }
@@ -310,16 +339,21 @@ export class SkinConverter {
     const rightLegPart = bodyParts.get('rightLeg');
     if (rightLegPart) {
       const legData = extractRegion(imageData, rightLegPart);
-      const resizedLeg = this.resizeWithAspectRatio(legData, 4, 6);
+      const resizedLeg = new SkinConverter().resizeWithAspectRatio(legData, 4, 6);
       
       copyRegionToSkin(skin, resizedLeg, 4, 20);
-      copyRegionToSkin(skin, flipHorizontal(resizedLeg), 12, 20);
+      if (useInpainting) {
+        const backLeg = inpaintBackFace(resizedLeg, 4, 6, 'right leg back');
+        Promise.resolve(backLeg).then((bl) => copyRegionToSkin(skin, bl as ImageData, 12, 20));
+      } else {
+        copyRegionToSkin(skin, flipHorizontal(resizedLeg), 12, 20);
+      }
       
-      const topLeg = this.resizeWithAspectRatio(legData, 4, 2);
+      const topLeg = new SkinConverter().resizeWithAspectRatio(legData, 4, 2);
       copyRegionToSkin(skin, topLeg, 4, 16);
       copyRegionToSkin(skin, topLeg, 8, 16);
       
-      const outerLeg = this.resizeWithAspectRatio(legData, 2, 6);
+      const outerLeg = new SkinConverter().resizeWithAspectRatio(legData, 2, 6);
       copyRegionToSkin(skin, outerLeg, 0, 20);
       copyRegionToSkin(skin, flipHorizontal(outerLeg), 8, 20);
     }
@@ -327,21 +361,26 @@ export class SkinConverter {
     const leftLegPart = bodyParts.get('leftLeg');
     if (leftLegPart) {
       const legData = extractRegion(imageData, leftLegPart);
-      const resizedLeg = this.resizeWithAspectRatio(legData, 4, 6);
+      const resizedLeg = new SkinConverter().resizeWithAspectRatio(legData, 4, 6);
       
       copyRegionToSkin(skin, resizedLeg, 20, 52);
-      copyRegionToSkin(skin, flipHorizontal(resizedLeg), 28, 52);
+      if (useInpainting) {
+        const backLeg = inpaintBackFace(resizedLeg, 4, 6, 'left leg back');
+        Promise.resolve(backLeg).then((bl) => copyRegionToSkin(skin, bl as ImageData, 28, 52));
+      } else {
+        copyRegionToSkin(skin, flipHorizontal(resizedLeg), 28, 52);
+      }
       
-      const topLeg = this.resizeWithAspectRatio(legData, 4, 2);
+      const topLeg = new SkinConverter().resizeWithAspectRatio(legData, 4, 2);
       copyRegionToSkin(skin, topLeg, 20, 48);
       copyRegionToSkin(skin, topLeg, 24, 48);
       
-      const innerLeg = this.resizeWithAspectRatio(legData, 2, 6);
+      const innerLeg = new SkinConverter().resizeWithAspectRatio(legData, 2, 6);
       copyRegionToSkin(skin, innerLeg, 16, 52);
       copyRegionToSkin(skin, flipHorizontal(innerLeg), 24, 52);
     }
     
-    return this.quantizeSkinColors(skin, 64);
+    return new SkinConverter().quantizeSkinColors(skin, 64);
   }
 
   private resizeWithAspectRatio(sourceData: ImageData, targetWidth: number, targetHeight: number): ImageData {

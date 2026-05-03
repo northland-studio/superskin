@@ -1,0 +1,120 @@
+.container {
+  position: relative;
+  display: inline-block;
+  border: 1px solid #333;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #1a1a1a;
+}
+
+.image {
+  display: block;
+  max-width: 100%;
+  max-height: 400px;
+  cursor: crosshair;
+}
+
+.svg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+}
+
+.rect {
+  fill: rgba(64, 169, 255, 0.15);
+  stroke-width: 2;
+  pointer-events: none;
+}
+
+.rectActive {
+  stroke: #40a9ff;
+}
+
+.rectInactive {
+  stroke: rgba(255, 255, 255, 0.5);
+}
+
+.label {
+  font-size: 11px;
+  fill: #fff;
+  font-weight: 600;
+}
+
+.controls {
+  display: flex;
+  gap: 8px;
+  padding: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+  background: #222;
+}
+
+.partBtn {
+  padding: 4px 12px;
+  border: 1px solid #555;
+  border-radius: 4px;
+  background: #333;
+  color: #ccc;
+  cursor: pointer;
+  font-size: 13px;
+  transition: all 0.2s;
+}
+
+.partBtn:hover {
+  border-color: #40a9ff;
+  color: #fff;
+}
+
+.partBtnActive {
+  border-color: #40a9ff;
+  background: rgba(64, 169, 255, 0.2);
+  color: #40a9ff;
+}
+
+.partBtnDone {
+  border-color: #52c41a;
+  color: #52c41a;
+}
+
+.confirmBtn {
+  padding: 6px 20px;
+  border: none;
+  border-radius: 4px;
+  background: #40a9ff;
+  color: #fff;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.confirmBtn:hover {
+  background: #1890ff;
+}
+
+.confirmBtn:disabled {
+  background: #555;
+  cursor: not-allowed;
+}
+
+.autoBtn {
+  padding: 6px 16px;
+  border: 1px solid #666;
+  border-radius: 4px;
+  background: #333;
+  color: #ccc;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.autoBtn:hover {
+  border-color: #40a9ff;
+}
+
+.hint {
+  color: #888;
+  font-size: 12px;
+  padding: 0 8px;
+}
