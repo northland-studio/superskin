@@ -265,8 +265,8 @@ export class SkinConverter {
       } else {
         copyRegionToSkin(skin, flipHorizontal(resizedHead), 24, 8);
       }
-      copyRegionToSkin(skin, resizedHead, 8, 0);
-      copyRegionToSkin(skin, resizedHead, 16, 0);
+      copyRegionToSkin(skin, flipHorizontal(resizedHead), 8, 0);
+      copyRegionToSkin(skin, flipHorizontal(resizedHead), 16, 0);
       copyRegionToSkin(skin, resizedHead, 0, 8);
       copyRegionToSkin(skin, flipHorizontal(resizedHead), 16, 8);
     }
@@ -285,8 +285,8 @@ export class SkinConverter {
       }
 
       const topBody = converter.resizeWithAspectRatio(bodyData, 8, 4);
-      copyRegionToSkin(skin, topBody, 20, 16);
-      copyRegionToSkin(skin, topBody, 28, 16);
+      copyRegionToSkin(skin, flipHorizontal(topBody), 20, 16);
+      copyRegionToSkin(skin, flipHorizontal(topBody), 28, 16);
 
       const bodySide = converter.resizeWithAspectRatio(bodyData, 4, 12);
       copyRegionToSkin(skin, bodySide, 16, 20);
@@ -307,8 +307,8 @@ export class SkinConverter {
       }
 
       const topArm = converter.resizeWithAspectRatio(armData, 4, 4);
-      copyRegionToSkin(skin, topArm, 44, 16);
-      copyRegionToSkin(skin, topArm, 48, 16);
+      copyRegionToSkin(skin, flipHorizontal(topArm), 44, 16);
+      copyRegionToSkin(skin, flipHorizontal(topArm), 48, 16);
 
       const armSide = converter.resizeWithAspectRatio(armData, 4, 12);
       copyRegionToSkin(skin, armSide, 40, 20);
@@ -329,8 +329,8 @@ export class SkinConverter {
       }
 
       const topArm = converter.resizeWithAspectRatio(armData, 4, 4);
-      copyRegionToSkin(skin, topArm, 36, 48);
-      copyRegionToSkin(skin, topArm, 40, 48);
+      copyRegionToSkin(skin, flipHorizontal(topArm), 36, 48);
+      copyRegionToSkin(skin, flipHorizontal(topArm), 40, 48);
 
       const armSide = converter.resizeWithAspectRatio(armData, 4, 12);
       copyRegionToSkin(skin, armSide, 32, 52);
@@ -351,8 +351,8 @@ export class SkinConverter {
       }
 
       const topLeg = converter.resizeWithAspectRatio(legData, 4, 4);
-      copyRegionToSkin(skin, topLeg, 4, 16);
-      copyRegionToSkin(skin, topLeg, 8, 16);
+      copyRegionToSkin(skin, flipHorizontal(topLeg), 4, 16);
+      copyRegionToSkin(skin, flipHorizontal(topLeg), 8, 16);
 
       const legSide = converter.resizeWithAspectRatio(legData, 4, 12);
       copyRegionToSkin(skin, legSide, 0, 20);
@@ -373,8 +373,8 @@ export class SkinConverter {
       }
 
       const topLeg = converter.resizeWithAspectRatio(legData, 4, 4);
-      copyRegionToSkin(skin, topLeg, 20, 48);
-      copyRegionToSkin(skin, topLeg, 24, 48);
+      copyRegionToSkin(skin, flipHorizontal(topLeg), 20, 48);
+      copyRegionToSkin(skin, flipHorizontal(topLeg), 24, 48);
 
       const legSide = converter.resizeWithAspectRatio(legData, 4, 12);
       copyRegionToSkin(skin, legSide, 16, 52);
