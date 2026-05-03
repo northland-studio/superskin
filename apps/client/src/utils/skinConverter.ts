@@ -1,8 +1,10 @@
-import { Color, getPixel, setPixel, adjustBrightness, blendColors, isTransparent } from './colorUtils';
+import { Color, getPixel, setPixel, adjustBrightness, isTransparent } from './colorUtils';
 import {
   detectBoundingBox,
+  detectBoundingBoxWithAI,
   removeBackground,
   detectBodyParts,
+  detectBodyPartsWithAI,
   extractRegion,
   resizeRegion,
   createEmptySkin,
@@ -17,6 +19,7 @@ export interface ConversionOptions {
   backgroundColor?: Color;
   backgroundTolerance: number;
   autoDetectParts: boolean;
+  useAI: boolean;
   template: SkinTemplate;
   brightness: number;
   contrast: number;
@@ -35,6 +38,7 @@ export const DEFAULT_OPTIONS: ConversionOptions = {
   removeBackground: true,
   backgroundTolerance: 50,
   autoDetectParts: true,
+  useAI: true,
   template: MINECRAFT_SKIN_TEMPLATE,
   brightness: 1.0,
   contrast: 1.0,
@@ -43,13 +47,11 @@ export const DEFAULT_OPTIONS: ConversionOptions = {
 
 export class SkinConverter {
   private canvas: HTMLCanvasElement;
-  private ctx: CanvasRenderingContext2D;
 
   constructor() {
     this.canvas = document.createElement('canvas');
     this.canvas.width = SKIN_WIDTH;
     this.canvas.height = SKIN_HEIGHT;
-    this.ctx = this.canvas.getContext('2d')!;
   }
 
   async convert(imageSource: string | HTMLImageElement, options: Partial<ConversionOptions> = {}): Promise<ConversionResult> {
@@ -71,11 +73,25 @@ export class SkinConverter {
     
     imageData = this.applyFilters(imageData, opts);
     
-    const boundingBox = detectBoundingBox(imageData);
+    let boundingBox: BoundingBox;
+    let bodyParts: Map<string, BoundingBox>;
     
-    const bodyParts = opts.autoDetectParts
-      ? detectBodyParts(imageData, boundingBox)
-      : this.getDefaultBodyParts(boundingBox);
+    if (opts.useAI && opts.autoDetectParts) {
+      try {
+        boundingBox = await detectBoundingBoxWithAI(imageData);
+        bodyParts = await detectBodyPartsWithAI(imageData, boundingBox);
+      } catch (error) {
+        console.warn('AI detection failed, using traditional method:', error);
+        boundingBox = detectBoundingBox(imageData);
+        bodyParts = detectBodyParts(imageData, boundingBox);
+      }
+    } else if (opts.autoDetectParts) {
+      boundingBox = detectBoundingBox(imageData);
+      bodyParts = detectBodyParts(imageData, boundingBox);
+    } else {
+      boundingBox = { x: 0, y: 0, width: imageData.width, height: imageData.height };
+      bodyParts = this.getDefaultBodyParts(boundingBox);
+    }
     
     const skinData = this.generateSkin(imageData, bodyParts, opts);
     
@@ -155,7 +171,7 @@ export class SkinConverter {
     };
   }
 
-  private generateSkin(imageData: ImageData, bodyParts: Map<string, BoundingBox>, options: ConversionOptions): ImageData {
+  private generateSkin(imageData: ImageData, bodyParts: Map<string, BoundingBox>, _options: ConversionOptions): ImageData {
     const skin = createEmptySkin();
     
     const headPart = bodyParts.get('head');
@@ -163,32 +179,29 @@ export class SkinConverter {
       const headData = extractRegion(imageData, headPart);
       const resizedHead = resizeRegion(headData, 8, 8);
       
-      copyRegionToSkin(skin, resizedHead, 0, 0);
-      copyRegionToSkin(skin, resizedHead, 8, 0);
-      copyRegionToSkin(skin, flipHorizontal(resizedHead), 0, 8);
       copyRegionToSkin(skin, resizedHead, 8, 8);
+      copyRegionToSkin(skin, flipHorizontal(resizedHead), 24, 8);
       copyRegionToSkin(skin, resizedHead, 8, 0);
       copyRegionToSkin(skin, resizedHead, 16, 0);
-      
-      const headTop = this.rotateRegion(resizedHead, 90);
-      copyRegionToSkin(skin, headTop, 8, 0);
+      copyRegionToSkin(skin, resizedHead, 0, 8);
+      copyRegionToSkin(skin, flipHorizontal(resizedHead), 16, 8);
     }
     
     const bodyPart = bodyParts.get('body');
     if (bodyPart) {
       const bodyData = extractRegion(imageData, bodyPart);
-      const resizedBody = resizeRegion(bodyData, 4, 6);
       
-      copyRegionToSkin(skin, resizedBody, 16, 16);
-      copyRegionToSkin(skin, resizedBody, 32, 16);
-    }
-    
-    const leftArmPart = bodyParts.get('leftArm');
-    if (leftArmPart) {
-      const armData = extractRegion(imageData, leftArmPart);
-      const resizedArm = resizeRegion(armData, 4, 6);
+      const frontBody = resizeRegion(bodyData, 4, 6);
+      copyRegionToSkin(skin, frontBody, 20, 20);
+      copyRegionToSkin(skin, flipHorizontal(frontBody), 32, 20);
       
-      copyRegionToSkin(skin, resizedArm, 32, 48);
+      const topBody = resizeRegion(bodyData, 4, 2);
+      copyRegionToSkin(skin, topBody, 20, 16);
+      copyRegionToSkin(skin, topBody, 20, 26);
+      
+      const rightSide = resizeRegion(bodyData, 2, 6);
+      copyRegionToSkin(skin, rightSide, 16, 20);
+      copyRegionToSkin(skin, flipHorizontal(rightSide), 28, 20);
     }
     
     const rightArmPart = bodyParts.get('rightArm');
@@ -196,15 +209,33 @@ export class SkinConverter {
       const armData = extractRegion(imageData, rightArmPart);
       const resizedArm = resizeRegion(armData, 4, 6);
       
-      copyRegionToSkin(skin, resizedArm, 40, 16);
+      copyRegionToSkin(skin, resizedArm, 44, 20);
+      copyRegionToSkin(skin, flipHorizontal(resizedArm), 52, 20);
+      
+      const topArm = resizeRegion(armData, 4, 2);
+      copyRegionToSkin(skin, topArm, 44, 16);
+      copyRegionToSkin(skin, topArm, 48, 16);
+      
+      const outerArm = resizeRegion(armData, 2, 6);
+      copyRegionToSkin(skin, outerArm, 40, 20);
+      copyRegionToSkin(skin, flipHorizontal(outerArm), 48, 20);
     }
     
-    const leftLegPart = bodyParts.get('leftLeg');
-    if (leftLegPart) {
-      const legData = extractRegion(imageData, leftLegPart);
-      const resizedLeg = resizeRegion(legData, 4, 6);
+    const leftArmPart = bodyParts.get('leftArm');
+    if (leftArmPart) {
+      const armData = extractRegion(imageData, leftArmPart);
+      const resizedArm = resizeRegion(armData, 4, 6);
       
-      copyRegionToSkin(skin, resizedLeg, 16, 48);
+      copyRegionToSkin(skin, resizedArm, 36, 52);
+      copyRegionToSkin(skin, flipHorizontal(resizedArm), 44, 52);
+      
+      const topArm = resizeRegion(armData, 4, 2);
+      copyRegionToSkin(skin, topArm, 36, 48);
+      copyRegionToSkin(skin, topArm, 40, 48);
+      
+      const innerArm = resizeRegion(armData, 2, 6);
+      copyRegionToSkin(skin, innerArm, 32, 52);
+      copyRegionToSkin(skin, flipHorizontal(innerArm), 40, 52);
     }
     
     const rightLegPart = bodyParts.get('rightLeg');
@@ -212,24 +243,36 @@ export class SkinConverter {
       const legData = extractRegion(imageData, rightLegPart);
       const resizedLeg = resizeRegion(legData, 4, 6);
       
-      copyRegionToSkin(skin, resizedLeg, 0, 16);
+      copyRegionToSkin(skin, resizedLeg, 4, 20);
+      copyRegionToSkin(skin, flipHorizontal(resizedLeg), 12, 20);
+      
+      const topLeg = resizeRegion(legData, 4, 2);
+      copyRegionToSkin(skin, topLeg, 4, 16);
+      copyRegionToSkin(skin, topLeg, 8, 16);
+      
+      const outerLeg = resizeRegion(legData, 2, 6);
+      copyRegionToSkin(skin, outerLeg, 0, 20);
+      copyRegionToSkin(skin, flipHorizontal(outerLeg), 8, 20);
+    }
+    
+    const leftLegPart = bodyParts.get('leftLeg');
+    if (leftLegPart) {
+      const legData = extractRegion(imageData, leftLegPart);
+      const resizedLeg = resizeRegion(legData, 4, 6);
+      
+      copyRegionToSkin(skin, resizedLeg, 20, 52);
+      copyRegionToSkin(skin, flipHorizontal(resizedLeg), 28, 52);
+      
+      const topLeg = resizeRegion(legData, 4, 2);
+      copyRegionToSkin(skin, topLeg, 20, 48);
+      copyRegionToSkin(skin, topLeg, 24, 48);
+      
+      const innerLeg = resizeRegion(legData, 2, 6);
+      copyRegionToSkin(skin, innerLeg, 16, 52);
+      copyRegionToSkin(skin, flipHorizontal(innerLeg), 24, 52);
     }
     
     return skin;
-  }
-
-  private rotateRegion(imageData: ImageData, angle: number): ImageData {
-    if (angle === 90 || angle === -270) {
-      const result = new ImageData(imageData.height, imageData.width);
-      for (let y = 0; y < imageData.height; y++) {
-        for (let x = 0; x < imageData.width; x++) {
-          const pixel = getPixel(imageData, x, y);
-          setPixel(result, imageData.height - 1 - y, x, pixel);
-        }
-      }
-      return result;
-    }
-    return imageData;
   }
 
   private getDefaultBodyParts(boundingBox: BoundingBox): Map<string, BoundingBox> {

@@ -1,9 +1,9 @@
 use rusqlite::{Connection, Result as SqliteResult};
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 use std::path::PathBuf;
 use std::sync::Mutex;
 
-pub struct Database(Mutex<Connection>);
+pub struct Database(pub Mutex<Connection>);
 
 fn get_database_path(app: &AppHandle) -> PathBuf {
     let app_dir = app.path().app_data_dir().expect("Failed to get app data dir");

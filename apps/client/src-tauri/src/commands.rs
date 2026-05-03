@@ -1,4 +1,4 @@
-use crate::Database;
+use crate::database::Database;
 use serde::{Deserialize, Serialize};
 use tauri::State;
 use uuid::Uuid;
@@ -26,6 +26,10 @@ pub struct User {
     pub created_at: String,
 }
 
+fn get_conn<'a>(db: &'a State<'a, Database>) -> Result<std::sync::MutexGuard<'a, rusqlite::Connection>, String> {
+    db.inner().0.lock().map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 pub fn save_skin(
     db: State<'_, Database>,
@@ -35,23 +39,24 @@ pub fn save_skin(
     preview_data: Option<String>,
     is_public: bool,
 ) -> Result<Skin, String> {
-    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let conn = get_conn(&db)?;
     
     let id = Uuid::new_v4().to_string();
     let now = Utc::now().to_rfc3339();
+    let is_public_str = if is_public { "1" } else { "0" };
     
     conn.execute(
         "INSERT INTO skins (id, name, description, skin_data, preview_data, is_public, created_at, updated_at)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-        [
-            &id,
-            &name,
-            &description.clone().unwrap_or_default(),
-            &skin_data,
-            &preview_data.clone().unwrap_or_default(),
-            if is_public { "1" } else { "0" },
-            &now,
-            &now,
+        rusqlite::params![
+            id,
+            name,
+            description,
+            skin_data,
+            preview_data,
+            is_public_str,
+            now,
+            now,
         ],
     ).map_err(|e| e.to_string())?;
 
@@ -69,7 +74,7 @@ pub fn save_skin(
 
 #[tauri::command]
 pub fn get_skins(db: State<'_, Database>) -> Result<Vec<Skin>, String> {
-    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let conn = get_conn(&db)?;
     
     let mut stmt = conn
         .prepare(
@@ -100,7 +105,7 @@ pub fn get_skins(db: State<'_, Database>) -> Result<Vec<Skin>, String> {
 
 #[tauri::command]
 pub fn delete_skin(db: State<'_, Database>, id: String) -> Result<(), String> {
-    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let conn = get_conn(&db)?;
     
     conn.execute("DELETE FROM skins WHERE id = ?1", [&id])
         .map_err(|e| e.to_string())?;
@@ -116,23 +121,24 @@ pub fn update_skin(
     description: Option<String>,
     is_public: Option<bool>,
 ) -> Result<Skin, String> {
-    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let conn = get_conn(&db)?;
     
     let now = Utc::now().to_rfc3339();
     
-    if let Some(n) = &name {
-        conn.execute("UPDATE skins SET name = ?1, updated_at = ?2 WHERE id = ?3", [n, &now, &id])
+    if let Some(ref n) = name {
+        conn.execute("UPDATE skins SET name = ?1, updated_at = ?2 WHERE id = ?3", rusqlite::params![n, now, &id])
             .map_err(|e| e.to_string())?;
     }
     
-    if let Some(d) = &description {
-        conn.execute("UPDATE skins SET description = ?1, updated_at = ?2 WHERE id = ?3", [d, &now, &id])
+    if let Some(ref d) = description {
+        conn.execute("UPDATE skins SET description = ?1, updated_at = ?2 WHERE id = ?3", rusqlite::params![d, now, &id])
             .map_err(|e| e.to_string())?;
     }
     
     if let Some(p) = is_public {
+        let p_str = if p { "1" } else { "0" };
         conn.execute("UPDATE skins SET is_public = ?1, updated_at = ?2 WHERE id = ?3", 
-            [if p { "1" } else { "0" }, &now, &id])
+            rusqlite::params![p_str, now, &id])
             .map_err(|e| e.to_string())?;
     }
 
@@ -170,20 +176,20 @@ pub fn save_user(
     avatar: Option<String>,
     token: Option<String>,
 ) -> Result<User, String> {
-    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let conn = get_conn(&db)?;
     
     let now = Utc::now().to_rfc3339();
     
     conn.execute(
         "INSERT OR REPLACE INTO users (id, username, email, avatar, token, created_at)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-        [
-            &id,
-            &username,
-            &email,
-            &avatar.clone().unwrap_or_default(),
-            &token.clone().unwrap_or_default(),
-            &now,
+        rusqlite::params![
+            id,
+            username,
+            email,
+            avatar,
+            token,
+            now,
         ],
     ).map_err(|e| e.to_string())?;
 
@@ -199,7 +205,7 @@ pub fn save_user(
 
 #[tauri::command]
 pub fn get_user(db: State<'_, Database>) -> Result<Option<User>, String> {
-    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let conn = get_conn(&db)?;
     
     let mut stmt = conn
         .prepare(
@@ -228,7 +234,7 @@ pub fn get_user(db: State<'_, Database>) -> Result<Option<User>, String> {
 
 #[tauri::command]
 pub fn clear_user(db: State<'_, Database>) -> Result<(), String> {
-    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let conn = get_conn(&db)?;
     
     conn.execute("DELETE FROM users", [])
         .map_err(|e| e.to_string())?;

@@ -1,5 +1,5 @@
-import { useRef, useEffect, useMemo } from 'react';
-import { Canvas, useFrame, useLoader } from '@react-three/fiber';
+import { useRef, useMemo, useEffect, useState } from 'react';
+import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { OrbitControls, Environment } from '@react-three/drei';
 import * as THREE from 'three';
 import styles from './SkinPreview3D.module.css';
@@ -22,6 +22,7 @@ function MinecraftModel({ skinTexture, animate = true }: { skinTexture: THREE.Te
   const material = useMemo(() => {
     skinTexture.magFilter = THREE.NearestFilter;
     skinTexture.minFilter = THREE.NearestFilter;
+    skinTexture.needsUpdate = true;
     return new THREE.MeshStandardMaterial({
       map: skinTexture,
       transparent: true,
@@ -49,27 +50,6 @@ function MinecraftModel({ skinTexture, animate = true }: { skinTexture: THREE.Te
     }
   });
 
-  const headUV = useMemo(() => {
-    const uv = new Float32Array(48);
-    const faceUVs = [
-      [0, 8, 8, 16],
-      [16, 8, 8, 16],
-      [8, 8, 8, 8],
-      [16, 8, 8, 8],
-      [8, 0, 8, 8],
-      [16, 0, 8, 8],
-    ];
-    let idx = 0;
-    for (const [u, v, w, h] of faceUVs) {
-      const u1 = u / 64, v1 = v / 64, u2 = (u + w) / 64, v2 = (v + h) / 64;
-      uv[idx++] = u1; uv[idx++] = v2;
-      uv[idx++] = u2; uv[idx++] = v2;
-      uv[idx++] = u2; uv[idx++] = v1;
-      uv[idx++] = u1; uv[idx++] = v1;
-    }
-    return uv;
-  }, []);
-
   const createBoxUVs = (x: number, y: number, w: number, h: number, d: number): Float32Array => {
     const uv = new Float32Array(48);
     const faceUVs = [
@@ -93,7 +73,6 @@ function MinecraftModel({ skinTexture, animate = true }: { skinTexture: THREE.Te
 
   const createPart = (uvX: number, uvY: number, width: number, height: number, depth: number) => {
     const geometry = new THREE.BoxGeometry(width, height, depth);
-    const positionAttr = geometry.getAttribute('position');
     const uvAttr = geometry.getAttribute('uv') as THREE.BufferAttribute;
     const newUVs = createBoxUVs(uvX, uvY, width, height, depth);
     uvAttr.array.set(newUVs);
@@ -119,7 +98,35 @@ function MinecraftModel({ skinTexture, animate = true }: { skinTexture: THREE.Te
 }
 
 function Scene({ skinUrl, animate }: { skinUrl: string; animate: boolean }) {
-  const texture = useLoader(THREE.TextureLoader, skinUrl);
+  const [texture, setTexture] = useState<THREE.Texture | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const loader = new THREE.TextureLoader();
+    loader.load(
+      skinUrl,
+      (tex) => {
+        tex.magFilter = THREE.NearestFilter;
+        tex.minFilter = THREE.NearestFilter;
+        tex.needsUpdate = true;
+        setTexture(tex);
+        setError(null);
+      },
+      undefined,
+      (err) => {
+        console.error('Texture loading error:', err);
+        setError('Failed to load texture');
+      }
+    );
+  }, [skinUrl]);
+
+  if (error) {
+    return null;
+  }
+
+  if (!texture) {
+    return null;
+  }
 
   return (
     <>
@@ -136,15 +143,6 @@ function Scene({ skinUrl, animate }: { skinUrl: string; animate: boolean }) {
       />
       <Environment preset="city" />
     </>
-  );
-}
-
-function PlaceholderModel() {
-  return (
-    <mesh>
-      <boxGeometry args={[8, 16, 4]} />
-      <meshStandardMaterial color="#cccccc" wireframe />
-    </mesh>
   );
 }
 

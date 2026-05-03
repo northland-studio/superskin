@@ -26,12 +26,39 @@ function Register() {
 
     setLoading(true);
     try {
-      await apiService.register(values.username, values.email, values.password);
+      const result = await apiService.register(values.username, values.email, values.password);
+      console.log('Register result:', result);
       message.success('注册成功！验证码已发送到您的邮箱');
       navigate(`/verify-email?email=${encodeURIComponent(values.email)}`);
     } catch (error: unknown) {
-      const err = error as { response?: { data?: { message?: string } } };
-      message.error(err.response?.data?.message || '注册失败，请稍后重试');
+      console.error('Register error:', error);
+      const err = error as { 
+        response?: { 
+          data?: { 
+            message?: string;
+            statusCode?: number;
+          };
+          status?: number;
+        };
+        message?: string;
+        code?: string;
+      };
+      
+      let errorMessage = '注册失败，请稍后重试';
+      
+      if (err.code === 'ERR_NETWORK' || err.message === 'Network Error') {
+        errorMessage = '网络连接失败，请检查网络或服务器状态';
+      } else if (err.response?.status === 401 || err.response?.data?.statusCode === 401) {
+        errorMessage = err.response?.data?.message || '用户名或邮箱已存在';
+      } else if (err.response?.status === 400 || err.response?.data?.statusCode === 400) {
+        errorMessage = err.response?.data?.message || '请求参数错误';
+      } else if (err.response?.status === 500) {
+        errorMessage = '服务器内部错误，请稍后重试';
+      } else if (err.response?.data?.message) {
+        errorMessage = err.response.data.message;
+      }
+      
+      message.error(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -54,6 +81,8 @@ function Register() {
             rules={[
               { required: true, message: '请输入用户名' },
               { min: 3, message: '用户名至少3个字符' },
+              { max: 20, message: '用户名最多20个字符' },
+              { pattern: /^[a-zA-Z0-9_\u4e00-\u9fa5]+$/, message: '用户名只能包含字母、数字、下划线和中文' },
             ]}
           >
             <Input prefix={<UserOutlined />} placeholder="用户名" />
@@ -84,8 +113,8 @@ function Register() {
             dependencies={['password']}
             rules={[
               { required: true, message: '请确认密码' },
-              ({ getFieldValue }) => ({
-                validator(_, value) {
+              ({ getFieldValue }: { getFieldValue: (name: string) => string }) => ({
+                validator(_rule: unknown, value: string) {
                   if (!value || getFieldValue('password') === value) {
                     return Promise.resolve();
                   }

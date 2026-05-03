@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Form, Button, Card, Typography, message, Space } from 'antd';
+import { Button, Card, Typography, message, Space } from 'antd';
 import { MailOutlined, ReloadOutlined } from '@ant-design/icons';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { apiService } from '@/services/api';
@@ -26,17 +26,18 @@ function VerifyEmail() {
   }, [countdown]);
 
   const handleInputChange = (index: number, value: string) => {
-    if (value.length > 1) {
-      value = value.slice(-1);
+    let newValue = value;
+    if (newValue.length > 1) {
+      newValue = newValue.slice(-1);
     }
 
-    if (!/^\d*$/.test(value)) return;
+    if (!/^\d*$/.test(newValue)) return;
 
     const newCode = [...code];
-    newCode[index] = value;
+    newCode[index] = newValue;
     setCode(newCode);
 
-    if (value && index < 5) {
+    if (newValue && index < 5) {
       inputRefs.current[index + 1]?.focus();
     }
 

@@ -2,8 +2,8 @@
 
 ## 报告信息
 
-- **报告日期**: 2026-05-02
-- **报告版本**: v2.0
+- **报告日期**: 2026-05-03
+- **报告版本**: v3.0
 - **开发者**: 北域工作室
 
 ---
@@ -31,13 +31,14 @@
 | 入口文件 | ✅ 完成 | main.tsx, App.tsx, index.css |
 | 状态管理 | ✅ 完成 | userStore, skinStore |
 | 布局组件 | ✅ 完成 | MainLayout |
-| 页面组件 | ✅ 完成 | Home, Editor, Gallery, Login, Register |
+| 页面组件 | ✅ 完成 | Home, Editor, Gallery, Login, Register, VerifyEmail |
 | **皮肤转换算法** | ✅ 完成 | 人物分割、部位识别、模板映射 |
 | **像素编辑器** | ✅ 完成 | 画笔、橡皮擦、填充、取色器、撤销/重做 |
 | **3D预览** | ✅ 完成 | Three.js + React Three Fiber |
 | **Tauri配置** | ✅ 完成 | Rust后端、SQLite数据库 |
 | **本地存储服务** | ✅ 完成 | localStorage + Tauri SQLite |
 | **API服务** | ✅ 完成 | 认证、皮肤CRUD、文件上传 |
+| **皮肤文件导入** | ✅ 完成 | 支持直接导入皮肤文件编辑 |
 
 ### 4. 服务端框架 (apps/server)
 
@@ -68,6 +69,14 @@
 - [x] Plan.md 开发计划文档
 - [x] Report.md 进度报告文档
 
+### 7. 部署
+
+- [x] 服务端部署到 http://superskin.xuanjian.top
+- [x] Nginx 反向代理配置
+- [x] PostgreSQL 数据库配置
+- [x] PM2 进程管理
+- [x] 客户端打包 (MSI + NSIS + EXE)
+
 ---
 
 ## 二、新增功能详解
@@ -86,9 +95,10 @@
 
 **功能特性:**
 - 自动背景检测与去除
-- 身体部位自动识别（头、身体、手臂、腿）
+- 身体部位智能识别（头、身体、手臂、腿）
 - 亮度/对比度/饱和度调整
 - 颜色量化
+- 完整的 6 面皮肤贴图生成
 
 ### 2.2 像素编辑器
 
@@ -135,10 +145,31 @@
 - `apps/server/src/modules/auth/auth.service.ts` - 认证服务（含邮箱验证）
 
 **功能特性:**
-- 注册邮箱验证
+- 注册邮箱验证（6位验证码）
 - 密码重置邮件
 - 欢迎邮件
 - 精美 HTML 邮件模板
+
+### 2.6 皮肤文件导入功能
+
+**核心文件:**
+- `apps/client/src/pages/Editor.tsx`
+
+**功能特性:**
+- 支持导入图片转换为皮肤
+- 支持直接导入皮肤文件进行像素编辑
+- 模式切换：图片转换 / 皮肤文件
+
+### 2.7 皮肤同步功能
+
+**核心文件:**
+- `apps/client/src/pages/Gallery.tsx`
+- `apps/client/src/pages/Editor.tsx`
+
+**功能特性:**
+- 本地皮肤库管理
+- 云端皮肤同步
+- 保存目标选择（本地/云端/两者）
 
 ---
 
@@ -174,7 +205,8 @@ SuperSkin/
 │   │   │   │   ├── Editor.tsx
 │   │   │   │   ├── Gallery.tsx
 │   │   │   │   ├── Login.tsx
-│   │   │   │   └── Register.tsx
+│   │   │   │   ├── Register.tsx
+│   │   │   │   └── VerifyEmail.tsx
 │   │   │   ├── layouts/
 │   │   │   │   └── MainLayout.tsx
 │   │   │   ├── stores/
@@ -258,7 +290,8 @@ SuperSkin/
 |------|------|------|
 | POST | /api/auth/register | 用户注册（发送验证邮件） |
 | POST | /api/auth/login | 用户登录 |
-| POST | /api/auth/verify-email | 验证邮箱 |
+| POST | /api/auth/verify-email | 验证邮箱（6位验证码） |
+| POST | /api/auth/resend-verification | 重发验证码 |
 | POST | /api/auth/request-password-reset | 请求重置密码 |
 | POST | /api/auth/reset-password | 重置密码 |
 | GET | /api/auth/profile | 获取用户信息 |
@@ -303,35 +336,67 @@ APP_URL=http://localhost:1420
 
 ---
 
-## 六、下一步计划
+## 六、部署信息
+
+### 服务器
+
+- **域名**: http://superskin.xuanjian.top
+- **IP**: 115.190.153.44
+- **端口**: 3004
+- **进程管理**: PM2
+- **反向代理**: Nginx
+
+### 客户端打包
+
+- **MSI 安装包**: `src-tauri/target/release/bundle/msi/SuperSkin_1.0.0_x64_en-US.msi`
+- **NSIS 安装包**: `src-tauri/target/release/bundle/nsis/SuperSkin_1.0.0_x64-setup.exe`
+- **可执行文件**: `src-tauri/target/release/superskin.exe`
+
+---
+
+## 七、已知问题与解决方案
+
+### 7.1 网络连接问题
+
+**问题**: 客户端打包后无法连接服务器 API
+
+**解决方案**: 更新 Tauri CSP 配置，允许 HTTP/HTTPS 连接
+```json
+"security": {
+  "csp": "default-src 'self'; img-src 'self' data: http: https:; connect-src 'self' http: https:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'"
+}
+```
+
+### 7.2 皮肤检测精度
+
+**问题**: 简单比例估算导致身体部位识别不准确
+
+**解决方案**: 实现智能身体部位检测算法
+- `findHeadTop()` - 检测头部顶部
+- `findNeck()` - 检测颈部位置
+- `findShoulders()` - 检测肩膀位置
+- `findWaist()` - 检测腰部位置
+- `findLegs()` - 检测腿部位置
+
+---
+
+## 八、下一步计划
 
 ### 待完成任务
 
-1. **测试与调试**
-   - [ ] 客户端本地测试
-   - [ ] 服务端本地测试
-   - [ ] API 联调测试
+1. **性能优化**
+   - [ ] 皮肤转换算法性能优化
+   - [ ] 3D预览渲染优化
 
-2. **部署**
-   - [ ] 服务端部署到 115.190.153.44:3004
-   - [ ] 配置 Nginx 反向代理
-   - [ ] 客户端打包测试
+2. **功能增强**
+   - [ ] 更多皮肤模板支持
+   - [ ] 批量皮肤管理
 
-3. **优化**
-   - [ ] 性能优化
-   - [ ] 皮肤转换算法优化
-   - [ ] UI/UX 优化
+3. **测试**
+   - [ ] 单元测试编写
+   - [ ] E2E 测试
 
 ---
 
-## 七、服务器信息
-
-- **IP**: 115.190.153.44
-- **SSH**: 已配置密钥
-- **计划端口**: 3004
-- **SMTP**: smtp.exmail.qq.com:465
-
----
-
-*报告生成时间: 2026-05-02*
-*报告版本: v2.0*
+*报告生成时间: 2026-05-03*
+*报告版本: v3.0*
