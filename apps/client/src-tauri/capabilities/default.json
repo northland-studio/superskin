@@ -20,6 +20,15 @@
         { "path": "$APPLOG/**" },
         { "path": "$APPLOCALDATA/**" }
       ]
-    }
+    },
+    {
+      "identifier": "http:default",
+      "allow": [
+        { "url": "http://**" },
+        { "url": "https://**" }
+      ]
+    },
+    "http:allow-fetch",
+    "http:allow-fetch-send"
   ]
 }

@@ -1,51 +1,88 @@
-import axios, { AxiosError, AxiosInstance } from 'axios';
+import { fetch } from '@tauri-apps/plugin-http';
 import { logger } from '@/utils/logger';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://superskin.xuanjian.top/api';
 
 logger.info('API Base URL configured', { url: API_BASE_URL });
 
-const api: AxiosInstance = axios.create({
-  baseURL: API_BASE_URL,
-  timeout: 30000,
-  headers: {
-    'Content-Type': 'application/json',
-  },
-});
+function getStoredToken(): string | null {
+  return localStorage.getItem('token');
+}
 
-api.interceptors.request.use(
-  (config) => {
-    const token = localStorage.getItem('token');
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
+interface ApiResponse<T> {
+  data?: T;
+  meta?: { total: number };
+  access_token?: string;
+  user?: T;
+  message?: string;
+  statusCode?: number;
+}
+
+async function apiRequest<T>(
+  method: string,
+  endpoint: string,
+  data?: unknown,
+  isFormData: boolean = false
+): Promise<T> {
+  const url = `${API_BASE_URL}${endpoint}`;
+  const token = getStoredToken();
+  
+  const headers: Record<string, string> = {};
+  
+  if (!isFormData) {
+    headers['Content-Type'] = 'application/json';
+  }
+  
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  
+  logger.debug('API Request', { method, url });
+  
+  let body: string | FormData | undefined;
+  
+  if (data) {
+    if (isFormData && data instanceof FormData) {
+      body = data;
+    } else {
+      body = JSON.stringify(data);
     }
-    logger.debug('API Request', { method: config.method, url: config.url });
-    return config;
-  },
-  (error) => {
-    logger.error('API Request Error', error);
-    return Promise.reject(error);
   }
-);
-
-api.interceptors.response.use(
-  (response) => {
-    logger.debug('API Response', { status: response.status, url: response.config.url });
-    return response;
-  },
-  (error: AxiosError) => {
-    const errorInfo = {
-      url: error.config?.url,
-      method: error.config?.method,
-      status: error.response?.status,
-      data: error.response?.data,
-      message: error.message,
-      code: error.code,
-    };
-    logger.error('API Response Error', errorInfo);
-    return Promise.reject(error);
+  
+  try {
+    const response = await fetch(url, {
+      method,
+      headers,
+      body,
+    });
+    
+    const responseText = await response.text();
+    
+    if (!response.ok) {
+      const errorData = responseText ? JSON.parse(responseText) : {};
+      logger.error('API Response Error', { 
+        url, 
+        method, 
+        status: response.status, 
+        data: errorData 
+      });
+      throw { 
+        response: { 
+          status: response.status, 
+          data: errorData 
+        }, 
+        message: errorData.message || 'Request failed' 
+      };
+    }
+    
+    const result = responseText ? JSON.parse(responseText) : {};
+    logger.debug('API Response', { status: response.status, url });
+    return result;
+  } catch (error) {
+    logger.error('API Request Error', { url, method, error });
+    throw error;
   }
-);
+}
 
 export interface User {
   id: string;
@@ -77,9 +114,9 @@ export const apiService = {
   async register(username: string, email: string, password: string): Promise<User> {
     logger.info('Attempting registration', { username, email });
     try {
-      const response = await api.post<User>('/auth/register', { username, email, password });
+      const result = await apiRequest<User>('POST', '/auth/register', { username, email, password });
       logger.info('Registration successful', { username });
-      return response.data;
+      return result;
     } catch (error) {
       logger.error('Registration failed', error);
       throw error;
@@ -89,11 +126,13 @@ export const apiService = {
   async login(username: string, password: string): Promise<User> {
     logger.info('Attempting login', { username });
     try {
-      const response = await api.post<{ access_token: string; user: User }>('/auth/login', { username, password });
-      const { access_token, user } = response.data;
-      localStorage.setItem('token', access_token);
+      const response = await apiRequest<ApiResponse<User>>('POST', '/auth/login', { username, password });
+      const { access_token, user } = response;
+      if (access_token) {
+        localStorage.setItem('token', access_token);
+      }
       logger.info('Login successful', { username });
-      return { ...user, token: access_token };
+      return { ...user, token: access_token } as User;
     } catch (error) {
       logger.error('Login failed', error);
       throw error;
@@ -103,7 +142,7 @@ export const apiService = {
   async verifyEmail(email: string, code: string): Promise<void> {
     logger.info('Verifying email', { email, code });
     try {
-      await api.post('/auth/verify-email', { email, code });
+      await apiRequest('POST', '/auth/verify-email', { email, code });
       logger.info('Email verification successful');
     } catch (error) {
       logger.error('Email verification failed', error);
@@ -114,7 +153,7 @@ export const apiService = {
   async resendVerificationCode(email: string): Promise<void> {
     logger.info('Resending verification code', { email });
     try {
-      await api.post('/auth/resend-verification', { email });
+      await apiRequest('POST', '/auth/resend-verification', { email });
       logger.info('Verification code resent');
     } catch (error) {
       logger.error('Resend verification failed', error);
@@ -124,21 +163,19 @@ export const apiService = {
 
   async getProfile(): Promise<User> {
     logger.info('Fetching user profile');
-    const response = await api.get<User>('/auth/profile');
-    return response.data;
+    return await apiRequest<User>('GET', '/auth/profile');
   },
 
   async uploadSkin(file: File): Promise<UploadResult> {
     logger.info('Uploading skin file', { filename: file.name, size: file.size });
+    
     const formData = new FormData();
     formData.append('file', file);
     
     try {
-      const response = await api.post<UploadResult>('/upload/skin', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
-      logger.info('Skin upload successful', { path: response.data.path });
-      return response.data;
+      const result = await apiRequest<UploadResult>('POST', '/upload/skin', formData, true);
+      logger.info('Skin upload successful', { path: result.path });
+      return result;
     } catch (error) {
       logger.error('Skin upload failed', error);
       throw error;
@@ -154,9 +191,9 @@ export const apiService = {
   }): Promise<Skin> {
     logger.info('Creating skin record', { name: data.name });
     try {
-      const response = await api.post<Skin>('/skins', data);
-      logger.info('Skin created', { id: response.data.id });
-      return response.data;
+      const result = await apiRequest<Skin>('POST', '/skins', data);
+      logger.info('Skin created', { id: result.id });
+      return result;
     } catch (error) {
       logger.error('Create skin failed', error);
       throw error;
@@ -166,11 +203,9 @@ export const apiService = {
   async getSkins(page: number = 1, limit: number = 20): Promise<{ data: Skin[]; meta: { total: number } }> {
     logger.info('Fetching skins', { page, limit });
     try {
-      const response = await api.get<{ data: Skin[]; meta: { total: number } }>('/skins', {
-        params: { page, limit },
-      });
-      logger.info('Skins fetched', { count: response.data.data.length });
-      return response.data;
+      const result = await apiRequest<{ data: Skin[]; meta: { total: number } }>('GET', `/skins?page=${page}&limit=${limit}`);
+      logger.info('Skins fetched', { count: result.data.length });
+      return result;
     } catch (error) {
       logger.error('Get skins failed', error);
       throw error;
@@ -179,27 +214,22 @@ export const apiService = {
 
   async getPublicSkins(page: number = 1, limit: number = 20): Promise<{ data: Skin[]; meta: { total: number } }> {
     logger.info('Fetching public skins', { page, limit });
-    const response = await api.get<{ data: Skin[]; meta: { total: number } }>('/skins/public', {
-      params: { page, limit },
-    });
-    return response.data;
+    return await apiRequest<{ data: Skin[]; meta: { total: number } }>('GET', `/skins/public?page=${page}&limit=${limit}`);
   },
 
   async getSkin(id: string): Promise<Skin> {
     logger.info('Fetching skin', { id });
-    const response = await api.get<Skin>(`/skins/${id}`);
-    return response.data;
+    return await apiRequest<Skin>('GET', `/skins/${id}`);
   },
 
   async updateSkin(id: string, data: Partial<Skin>): Promise<Skin> {
     logger.info('Updating skin', { id });
-    const response = await api.put<Skin>(`/skins/${id}`, data);
-    return response.data;
+    return await apiRequest<Skin>('PUT', `/skins/${id}`, data);
   },
 
   async deleteSkin(id: string): Promise<void> {
     logger.info('Deleting skin', { id });
-    await api.delete(`/skins/${id}`);
+    await apiRequest('DELETE', `/skins/${id}`);
   },
 
   getSkinUrl(path: string): string {
