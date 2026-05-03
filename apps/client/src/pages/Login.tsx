@@ -3,6 +3,8 @@ import { Form, Input, Button, Card, Typography, message } from 'antd';
 import { UserOutlined, LockOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { useUserStore } from '../stores/userStore';
+import { apiService } from '@/services/api';
+import { logger } from '@/utils/logger';
 import styles from './Auth.module.css';
 
 const { Title } = Typography;
@@ -20,21 +22,61 @@ function Login() {
   const onFinish = async (values: LoginForm) => {
     setLoading(true);
     try {
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-
+      const user = await apiService.login(values.username, values.password);
+      
+      logger.info('Login API returned user', { 
+        id: user.id, 
+        username: user.username, 
+        hasToken: !!user.token,
+        tokenLength: user.token?.length || 0
+      });
+      
+      const tokenToSave = user.token || '';
+      logger.info('Calling login with token', { tokenEmpty: tokenToSave === '' });
+      
       login(
         {
-          id: '1',
-          username: values.username,
-          email: `${values.username}@example.com`,
+          id: user.id,
+          username: user.username,
+          email: user.email,
+          avatar: user.avatar,
         },
-        'mock-token'
+        tokenToSave
       );
 
       message.success('登录成功！');
       navigate('/');
-    } catch {
-      message.error('登录失败，请检查用户名和密码');
+    } catch (error: unknown) {
+      console.error('Login error:', error);
+      const err = error as { 
+        response?: { 
+          data?: { 
+            message?: string;
+            statusCode?: number;
+          };
+          status?: number;
+        };
+        message?: string;
+        code?: string;
+      };
+      
+      let errorMessage = '登录失败，请检查用户名和密码';
+      
+      if (err.code === 'ERR_NETWORK' || err.message === 'Network Error') {
+        errorMessage = '网络连接失败，请检查网络或服务器状态';
+      } else if (err.response?.status === 401 || err.response?.data?.statusCode === 401) {
+        errorMessage = '用户名或密码错误';
+      } else if (err.response?.status === 400 || err.response?.data?.statusCode === 400) {
+        errorMessage = err.response?.data?.message || '请求参数错误';
+      } else if (err.response?.status === 500) {
+        errorMessage = '服务器内部错误，请稍后重试';
+      } else if (err.response?.data?.message) {
+        errorMessage = err.response.data.message;
+      } else if (err.message) {
+        errorMessage = err.message;
+      }
+      
+      message.error(errorMessage);
     } finally {
       setLoading(false);
     }
