@@ -255,22 +255,20 @@ function buildCubeMesh(def: CubeDef, material: THREE.Material): BuildResult {
   return { mesh, pivot };
 }
 
-const ANIM_MAP: Record<string, number> = {
-  0: 0, 1: 0,
-  4: 1, 5: 1,
-  6: 2, 7: 2,
-  8: 3, 9: 3,
-  10: 4, 11: 4,
+const ANIM_SLOTS: Record<string, number[]> = {
+  head: [0, 1],
+  armR: [4, 5],
+  armL: [6, 7],
+  legR: [8, 9],
+  legL: [10, 11],
 };
 
 function SkinModel({ texture, animate }: { texture: THREE.Texture; animate: boolean }) {
+  const headRef = useRef<THREE.Group>(null);
   const armRefR = useRef<THREE.Group>(null);
   const armRefL = useRef<THREE.Group>(null);
   const legRefR = useRef<THREE.Group>(null);
   const legRefL = useRef<THREE.Group>(null);
-  const headRef = useRef<THREE.Group>(null);
-
-  const refsByAnimIdx = useMemo(() => [headRef, armRefR, armRefL, legRefR, legRefL], []);
 
   const material = useMemo(() => {
     texture.magFilter = THREE.NearestFilter;
@@ -292,10 +290,37 @@ function SkinModel({ texture, animate }: { texture: THREE.Texture; animate: bool
     [material]
   );
 
+  const slotGroups = useMemo(() => {
+    const staticMeshes: { mesh: THREE.Mesh; pivot: [number, number, number] }[] = [];
+    const slots: { ref: React.RefObject<THREE.Group>; children: { mesh: THREE.Mesh; pivot: [number, number, number] }[] }[] = [
+      { ref: headRef, children: [] },
+      { ref: armRefR, children: [] },
+      { ref: armRefL, children: [] },
+      { ref: legRefR, children: [] },
+      { ref: legRefL, children: [] },
+    ];
+
+    for (let i = 0; i < results.length; i++) {
+      let found = false;
+      for (const [slotIdx, indices] of Object.values(ANIM_SLOTS).entries()) {
+        if (indices.includes(i)) {
+          slots[slotIdx].children.push(results[i]);
+          found = true;
+          break;
+        }
+      }
+      if (!found) {
+        staticMeshes.push(results[i]);
+      }
+    }
+    return { slots, staticMeshes };
+  }, [results]);
+
   useFrame(() => {
     if (!animate) return;
     const t = performance.now() * 0.004;
     const swing = Math.sin(t) * 0.6;
+    if (headRef.current) headRef.current.rotation.y = swing * 0.2;
     if (armRefR.current) armRefR.current.rotation.x = swing;
     if (armRefL.current) armRefL.current.rotation.x = -swing;
     if (legRefR.current) legRefR.current.rotation.x = -swing;
@@ -304,21 +329,20 @@ function SkinModel({ texture, animate }: { texture: THREE.Texture; animate: bool
 
   return (
     <group scale={[0.9375, 0.9375, 0.9375]}>
-      {results.map(({ mesh, pivot }, i) => {
-        const animIdx = ANIM_MAP[i];
-        if (animIdx !== undefined) {
-          return (
-            <group key={i} ref={refsByAnimIdx[animIdx]} position={pivot}>
+      {slotGroups.slots.map((slot, idx) => (
+        <group key={idx} ref={slot.ref}>
+          {slot.children.map(({ mesh, pivot }, ci) => (
+            <group key={ci} position={pivot}>
               <primitive object={mesh} />
             </group>
-          );
-        }
-        return (
-          <group key={i} position={pivot}>
-            <primitive object={mesh} />
-          </group>
-        );
-      })}
+          ))}
+        </group>
+      ))}
+      {slotGroups.staticMeshes.map(({ mesh, pivot }, si) => (
+        <group key={`s${si}`} position={pivot}>
+          <primitive object={mesh} />
+        </group>
+      ))}
     </group>
   );
 }
