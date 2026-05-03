@@ -28,6 +28,7 @@ interface BodyPartSelectorProps {
 export function BodyPartSelector({ imageSrc, onConfirm }: BodyPartSelectorProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const imgRef = useRef<HTMLImageElement>(null);
+  const [imageSize, setImageSize] = useState({ w: 1, h: 1 });
   const [parts, setParts] = useState<BodyPartEntry[]>(
     PART_DEFS.map((p) => ({ ...p, box: null }))
   );
@@ -35,6 +36,7 @@ export function BodyPartSelector({ imageSrc, onConfirm }: BodyPartSelectorProps)
   const [drawing, setDrawing] = useState(false);
   const [startPos, setStartPos] = useState<{ x: number; y: number } | null>(null);
   const [autoDetecting, setAutoDetecting] = useState(false);
+  const [detectMsg, setDetectMsg] = useState<string | null>(null);
 
   const getImageCoords = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     const img = imgRef.current;
@@ -79,6 +81,7 @@ export function BodyPartSelector({ imageSrc, onConfirm }: BodyPartSelectorProps)
 
   const handleAutoDetect = useCallback(async () => {
     setAutoDetecting(true);
+    setDetectMsg(null);
     try {
       const img = imgRef.current;
       if (!img) return;
@@ -100,11 +103,23 @@ export function BodyPartSelector({ imageSrc, onConfirm }: BodyPartSelectorProps)
               return { ...p, box };
             })
           );
+          const found = aiParts.size;
+          const missing = PART_DEFS.filter((pd) => !aiParts.has(pd.name)).map((pd) => pd.label);
+          if (missing.length > 0) {
+            setDetectMsg(`AI检测到 ${found}/6 个部位，未检测到: ${missing.join('、')}，请手动补全`);
+          } else {
+            setDetectMsg(`AI检测完成，已识别全部 ${found} 个部位`);
+          }
           logger.info('Auto detection completed', { partsFound: aiParts.size });
+        } else {
+          setDetectMsg('AI未检测到有效人体姿态，请手动框选');
         }
+      } else {
+        setDetectMsg('AI模型加载失败或未检测到人物，请手动框选');
       }
     } catch (err) {
       logger.error('Auto detect failed', err);
+      setDetectMsg('AI检测出错，请手动框选');
     } finally {
       setAutoDetecting(false);
     }
@@ -158,8 +173,18 @@ export function BodyPartSelector({ imageSrc, onConfirm }: BodyPartSelectorProps)
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}
       >
-        <img ref={imgRef} src={imageSrc} className={styles.image} draggable={false} />
-        <svg className={styles.svg} viewBox={`0 0 ${imgRef.current?.naturalWidth || 1} ${imgRef.current?.naturalHeight || 1}`}>
+        <img
+          ref={imgRef}
+          src={imageSrc}
+          className={styles.image}
+          draggable={false}
+          onLoad={() => {
+            if (imgRef.current) {
+              setImageSize({ w: imgRef.current.naturalWidth, h: imgRef.current.naturalHeight });
+            }
+          }}
+        />
+        <svg className={styles.svg} viewBox={`0 0 ${imageSize.w} ${imageSize.h}`}>
           {displayWidth(parts)}
         </svg>
       </div>
@@ -191,6 +216,7 @@ export function BodyPartSelector({ imageSrc, onConfirm }: BodyPartSelectorProps)
       <div className={styles.hint}>
         点击上方标签切换部位 → 在图片上拖拽框选 → 全部标完后确认生成
       </div>
+      {detectMsg && <div className={styles.detectMsg}>{detectMsg}</div>}
     </div>
   );
 }
