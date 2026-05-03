@@ -1,170 +1,183 @@
 # SuperSkin
 
-**通过一张图片自动化制作 Minecraft 皮肤，支持编辑、预览、云端同步**
+<p align="center">
+  <img src="https://img.shields.io/badge/license-GPL%203.0-blue.svg" alt="License: GPL 3.0" />
+  <img src="https://img.shields.io/badge/rust-1.70+-orange.svg" alt="Rust 1.70+" />
+  <img src="https://img.shields.io/badge/node-18+-green.svg" alt="Node 18+" />
+  <img src="https://img.shields.io/badge/Tauri-2.x-purple.svg" alt="Tauri 2.x" />
+  <img src="https://img.shields.io/badge/React-18.x-blue.svg" alt="React 18" />
+  <img src="https://img.shields.io/badge/NestJS-10.x-red.svg" alt="NestJS 10" />
+</p>
 
-## 项目简介
+<p align="center">
+  <b>🧊 从一张照片生成 Minecraft 皮肤 — 支持 AI 姿态检测、3D 预览、云端同步</b>
+</p>
 
-SuperSkin 是一款独立的桌面应用程序，帮助用户轻松创建和编辑 Minecraft 皮肤。用户可以上传任意图片，自动转换为标准 Minecraft 皮肤格式，并使用内置的像素编辑器进行精细调整。
+---
 
-### 核心功能
+## ✨ 功能磁贴
 
-- **图片转皮肤**: 上传图片自动转换为 64x64 标准 Minecraft 皮肤格式
-- **像素编辑器**: 内置专业像素绘制工具，支持撤销/重做
-- **3D 预览**: 实时 3D 预览皮肤效果，支持旋转和动画
-- **用户系统**: 登录注册，云端同步皮肤数据
-- **皮肤库管理**: 管理本地和云端皮肤，支持公开分享
+<table>
+<tr>
+  <td width="33%">
+    <h3>🖼️ 图片转皮肤</h3>
+    <p>上传任意人物照片，AI 自动检测姿态和身体部位，一键生成标准 64×64 Minecraft 皮肤</p>
+  </td>
+  <td width="33%">
+    <h3>✏️ 像素编辑器</h3>
+    <p>内置专业像素绘制工具，支持 512×512 放大编辑、撤销/重做，精细调整每个像素</p>
+  </td>
+  <td width="33%">
+    <h3>🌐 3D 实时预览</h3>
+    <p>基于 Three.js 的 Minecraft 标准皮肤模型，支持旋转、缩放、四肢动画</p>
+  </td>
+</tr>
+<tr>
+  <td>
+    <h3>☁️ 云端同步</h3>
+    <p>登录后一键上传/下载皮肤到云端服务器，多设备共享你的创作</p>
+  </td>
+  <td>
+    <h3>📂 皮肤库管理</h3>
+    <p>本地皮肤库支持编辑、删除、导出，磁贴式预览图展示</p>
+  </td>
+  <td>
+    <h3>🔐 用户系统</h3>
+    <p>注册、邮箱验证、JWT 登录，安全可靠的身份认证</p>
+  </td>
+</tr>
+<tr>
+  <td>
+    <h3>🤖 AI 姿态检测</h3>
+    <p>集成 YOLOv8s-pose 模型，MediaPipe + ONNX 混合检测人体关键点</p>
+  </td>
+  <td>
+    <h3>🎯 背景去除</h3>
+    <p>智能图像分割，自动去除照片背景，保留人物主体</p>
+  </td>
+  <td>
+    <h3>📝 文件日志</h3>
+    <p>可执行文件目录下自动生成 .log 文件，方便排查问题</p>
+  </td>
+</tr>
+</table>
 
-## 技术栈
+## 🏗️ 技术栈
 
-### 应用端
+### 客户端 (Tauri + React)
 
-| 技术 | 版本 | 用途 |
-|------|------|------|
-| Tauri | 2.x | 跨平台桌面应用框架 |
-| React | 18.x | 前端 UI 框架 |
-| TypeScript | 5.x | 类型安全 |
-| Ant Design | 5.x | UI 组件库 |
-| Zustand | 4.x | 状态管理 |
-| Three.js | - | 3D 渲染引擎 |
-| SQLite | - | 本地数据存储 |
+| 技术 | 用途 |
+|------|------|
+| Tauri 2.x | 跨平台桌面应用框架 |
+| React 18 + TypeScript | 前端 UI |
+| Ant Design 5 | UI 组件库 |
+| Zustand | 状态管理 |
+| Three.js + React Three Fiber | 3D 渲染 |
+| @react-three/drei | 3D 辅助工具 |
+| SQLite (rusqlite) | 本地数据存储 |
+| MediaPipe + ONNX Runtime Web | AI 姿态检测 |
 
-### 服务端
+### 服务端 (NestJS)
 
-| 技术 | 版本 | 用途 |
-|------|------|------|
-| Node.js | 18+ | 运行时环境 |
-| NestJS | 10.x | 后端框架 |
-| PostgreSQL | 15+ | 关系型数据库 |
-| Prisma | 5.x | ORM |
-| JWT | - | 身份认证 |
-| Passport.js | - | 认证中间件 |
+| 技术 | 用途 |
+|------|------|
+| NestJS 10 | 后端框架 |
+| PostgreSQL + Prisma | 数据库 |
+| JWT + Passport.js | 身份认证 |
+| Multer | 文件上传 |
+| Nodemailer | 邮件验证 |
 
-## 项目结构
+## 📁 项目结构
 
 ```
 SuperSkin/
 ├── apps/
 │   ├── client/              # Tauri + React 客户端
 │   │   ├── src/             # React 源码
-│   │   │   ├── components/  # UI 组件
-│   │   │   ├── pages/       # 页面
-│   │   │   ├── layouts/     # 布局
-│   │   │   ├── stores/      # 状态管理
-│   │   │   └── utils/       # 工具函数
-│   │   └── src-tauri/       # Tauri 配置
+│   │   │   ├── components/  # SkinPreview3D, PixelEditor 等
+│   │   │   ├── pages/       # Editor, Gallery, Login, Register
+│   │   │   ├── stores/      # skinStore, userStore
+│   │   │   ├── services/    # api.ts (Rust HTTP 调用)
+│   │   │   └── utils/       # skinConverter, logger
+│   │   └── src-tauri/       # Rust 源码
+│   │       └── src/         # commands, database, main
 │   │
 │   └── server/              # NestJS 服务端
-│       ├── src/
-│       │   ├── modules/     # 功能模块
-│       │   │   ├── auth/    # 认证模块
-│       │   │   ├── users/   # 用户模块
-│       │   │   └── skins/   # 皮肤模块
-│       │   └── common/      # 公共组件
-│       └── prisma/          # 数据库模型
+│       ├── src/modules/
+│       │   ├── auth/        # 注册/登录/JWT
+│       │   ├── skins/       # 皮肤 CRUD
+│       │   └── upload/      # 文件上传
+│       └── prisma/          # 数据库 Schema
 │
-├── packages/
-│   └── shared/              # 共享类型定义
-│
+├── packages/shared/         # 共享类型
+├── LICENSE                  # GPL-3.0
 ├── Plan.md                  # 开发计划
-├── Report.md                # 进度报告
-└── README.md                # 项目说明
+└── Report.md                # 进度报告
 ```
 
-## 快速开始
+## 🚀 快速开始
 
 ### 环境要求
 
 - Node.js >= 18
 - pnpm >= 9.0
-- Rust >= 1.70 (Tauri)
+- Rust >= 1.70 (含 `rustup` + `wasm32-unknown-unknown` target)
 - PostgreSQL >= 15
 
 ### 安装依赖
 
 ```bash
-# 安装 pnpm (如未安装)
-npm install -g pnpm
-
-# 安装项目依赖
 pnpm install
 ```
 
-### 开发模式
+### 开发
 
 ```bash
-# 启动客户端开发服务器
-pnpm dev:client
-
-# 启动服务端开发服务器
-pnpm dev:server
+pnpm dev:client    # Tauri 客户端（开发模式）
+pnpm dev:server    # NestJS 服务端（开发模式）
 ```
 
-### 数据库配置
+### 构建
 
 ```bash
-# 进入服务端目录
-cd apps/server
-
-# 复制环境变量配置
-cp .env.example .env
-
-# 生成 Prisma 客户端
-pnpm prisma:generate
-
-# 运行数据库迁移
-pnpm prisma:migrate
+pnpm build:client  # 生成 .exe/.msi 安装包
+pnpm build:server  # 构建服务端
 ```
 
-### 构建生产版本
+构建产物位于 `apps/client/src-tauri/target/release/bundle/`
 
-```bash
-# 构建客户端
-pnpm build:client
+## 📡 API 文档
 
-# 构建服务端
-pnpm build:server
-```
+服务端启动后访问 `http://localhost:3004/api/docs` (Swagger)
 
-## API 文档
+| 方法 | 路径 | 认证 | 说明 |
+|------|------|------|------|
+| POST | /api/auth/register | 否 | 用户注册 |
+| POST | /api/auth/login | 否 | 用户登录 |
+| POST | /api/auth/verify-email | 否 | 邮箱验证 |
+| GET | /api/auth/profile | JWT | 获取用户信息 |
+| GET | /api/skins | JWT | 获取皮肤列表 |
+| POST | /api/skins | JWT | 创建皮肤 |
+| PUT | /api/skins/:id | JWT | 更新皮肤 |
+| DELETE | /api/skins/:id | JWT | 删除皮肤 |
+| POST | /api/upload/skin | JWT | 上传皮肤文件 |
 
-服务端启动后访问: `http://localhost:3004/api/docs`
+## 🔗 仓库地址
 
-### 主要接口
+- **GitHub**: [northland-studio/superskin](https://github.com/northland-studio/superskin)
+- **Gitee**: [morzane123/superskin](https://gitee.com/morzane123/superskin)
 
-| 方法 | 路径 | 描述 |
-|------|------|------|
-| POST | /api/auth/register | 用户注册 |
-| POST | /api/auth/login | 用户登录 |
-| GET | /api/auth/profile | 获取用户信息 |
-| GET | /api/skins | 获取皮肤列表 |
-| POST | /api/skins | 创建皮肤 |
-| PUT | /api/skins/:id | 更新皮肤 |
-| DELETE | /api/skins/:id | 删除皮肤 |
+## 📜 开源协议
 
-## 开发规范
+本项目采用 [GNU General Public License v3.0](LICENSE) 开源协议。
 
-### Git 提交规范
+SuperSkin - Copyright (C) 2025-2026 北域工作室
 
-| 前缀 | 描述 |
-|------|------|
-| feat | 新功能 |
-| fix | 修复 Bug |
-| docs | 文档更新 |
-| style | 代码格式 |
-| refactor | 代码重构 |
-| test | 测试相关 |
-| chore | 构建/工具 |
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
 
-### 设计规范
+## 👨‍💻 开发者
 
-- 主色调: `#0055B9`
-- 背景色: `#FFFFFF`
-- 风格: 简洁轻量化
-
-## 开发者
-
-**北域工作室**
-
-## 许可证
-
-MIT License
+**北域工作室** — Minecraft 皮肤生成与编辑工具
