@@ -82,7 +82,7 @@ function Gallery() {
     setSyncing(true);
     try {
       const result = await apiService.getSkins();
-      const serverSkins = result.data || result.items || result;
+      const serverSkins = result.data;
       
       if (Array.isArray(serverSkins)) {
         message.success(`从云端获取了 ${serverSkins.length} 个皮肤`);

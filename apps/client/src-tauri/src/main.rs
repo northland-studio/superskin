@@ -6,6 +6,8 @@ mod commands;
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_fs::init())
         .setup(|app| {
             let app_handle = app.handle();
             database::init_database(&app_handle).expect("Failed to initialize database");

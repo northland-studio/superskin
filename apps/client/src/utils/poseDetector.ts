@@ -1,9 +1,12 @@
 import * as ort from 'onnxruntime-web';
+import { SelfieSegmentation } from '@mediapipe/selfie_segmentation';
+import { logger } from './logger';
 
 export interface Keypoint {
   x: number;
   y: number;
   confidence: number;
+  name: string;
 }
 
 export interface PoseResult {
@@ -14,6 +17,8 @@ export interface PoseResult {
     width: number;
     height: number;
   };
+  segmentationMask?: ImageData;
+  confidence: number;
 }
 
 const KEYPOINT_NAMES = [
@@ -23,25 +28,62 @@ const KEYPOINT_NAMES = [
   'left_knee', 'right_knee', 'left_ankle', 'right_ankle'
 ];
 
-const MODEL_URL = 'https://huggingface.co/pinto0309/yolov8n-pose/resolve/main/yolov8n-pose.onnx';
+const YOLOV8S_MODEL_URL = 'https://huggingface.co/pinto0309/yolov8s-pose/resolve/main/yolov8s-pose.onnx';
 
-let session: ort.InferenceSession | null = null;
+let yoloSession: ort.InferenceSession | null = null;
+let selfieSegmentation: SelfieSegmentation | null = null;
 
-async function loadModel(): Promise<ort.InferenceSession> {
-  if (session) return session;
+export type ProgressCallback = (stage: string, progress: number) => void;
+
+async function loadYOLOModel(): Promise<ort.InferenceSession> {
+  if (yoloSession) return yoloSession;
   
-  ort.env.wasm.numThreads = 4;
+  logger.info('Loading YOLOv8s-pose model...');
+  
+  ort.env.wasm.numThreads = navigator.hardwareConcurrency || 4;
   ort.env.wasm.simd = true;
   
-  session = await ort.InferenceSession.create(MODEL_URL, {
+  yoloSession = await ort.InferenceSession.create(YOLOV8S_MODEL_URL, {
     executionProviders: ['wasm'],
     graphOptimizationLevel: 'all',
   });
   
-  return session;
+  logger.info('YOLOv8s-pose model loaded successfully');
+  return yoloSession;
 }
 
-function preprocessImage(imageData: ImageData): Float32Array {
+async function loadSelfieSegmentation(): Promise<SelfieSegmentation> {
+  if (selfieSegmentation) return selfieSegmentation;
+  
+  logger.info('Loading MediaPipe Selfie Segmentation...');
+  
+  return new Promise((resolve, reject) => {
+    const segmentation = new SelfieSegmentation({
+      locateFile: (file) => {
+        return `https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/${file}`;
+      },
+    });
+    
+    segmentation.setOptions({
+      modelSelection: 1,
+      selfieMode: true,
+    });
+    
+    segmentation.onResults(() => {
+      selfieSegmentation = segmentation;
+      logger.info('MediaPipe Selfie Segmentation loaded successfully');
+      resolve(segmentation);
+    });
+    
+    segmentation.initialize().then(() => {
+      selfieSegmentation = segmentation;
+      logger.info('MediaPipe Selfie Segmentation initialized');
+      resolve(segmentation);
+    }).catch(reject);
+  });
+}
+
+function preprocessImageForYOLO(imageData: ImageData): Float32Array {
   const { width, height, data } = imageData;
   const targetSize = 640;
   
@@ -83,17 +125,22 @@ function preprocessImage(imageData: ImageData): Float32Array {
 }
 
 function sigmoid(x: number): number {
-  return 1 / (1 + Math.exp(-x));
+  return 1 / (1 + Math.exp(-Math.max(-500, Math.min(500, x))));
 }
 
-export async function detectPose(imageData: ImageData): Promise<PoseResult | null> {
+async function detectWithYOLO(imageData: ImageData, onProgress?: ProgressCallback): Promise<PoseResult | null> {
   try {
-    const model = await loadModel();
-    const input = preprocessImage(imageData);
+    onProgress?.('加载YOLO模型', 10);
+    const model = await loadYOLOModel();
     
+    onProgress?.('预处理图像', 20);
+    const input = preprocessImageForYOLO(imageData);
+    
+    onProgress?.('运行姿态检测', 40);
     const tensor = new ort.Tensor('float32', input, [1, 3, 640, 640]);
     const results = await model.run({ images: tensor });
     
+    onProgress?.('解析检测结果', 60);
     const output = results[Object.keys(results)[0]];
     const data = output.data as Float32Array;
     const [numDetections, attributes] = output.dims as [number, number];
@@ -101,13 +148,14 @@ export async function detectPose(imageData: ImageData): Promise<PoseResult | nul
     let bestDetection: { score: number; index: number } = { score: 0, index: -1 };
     
     for (let i = 0; i < numDetections; i++) {
-      const score = data[i * attributes + 4];
+      const score = sigmoid(data[i * attributes + 4]);
       if (score > bestDetection.score) {
         bestDetection = { score, index: i };
       }
     }
     
-    if (bestDetection.index === -1 || bestDetection.score < 0.5) {
+    if (bestDetection.index === -1 || bestDetection.score < 0.3) {
+      logger.warn('No valid pose detected', { bestScore: bestDetection.score });
       return null;
     }
     
@@ -137,15 +185,85 @@ export async function detectPose(imageData: ImageData): Promise<PoseResult | nul
       const confidence = sigmoid(data[idx + keypointOffset + k * 3 + 2]);
       
       keypoints.push({
-        x: (kx - offsetX) / scale,
-        y: (ky - offsetY) / scale,
+        x: Math.max(0, Math.min(imageData.width, (kx - offsetX) / scale)),
+        y: Math.max(0, Math.min(imageData.height, (ky - offsetY) / scale)),
         confidence,
+        name: KEYPOINT_NAMES[k],
       });
     }
     
-    return { keypoints, bbox };
+    logger.info('YOLO pose detected', { confidence: bestDetection.score, keypointsFound: keypoints.filter(k => k.confidence > 0.5).length });
+    
+    return { keypoints, bbox, confidence: bestDetection.score };
   } catch (error) {
-    console.error('Pose detection error:', error);
+    logger.error('YOLO detection error', error);
+    return null;
+  }
+}
+
+async function getSegmentationMask(imageData: ImageData, onProgress?: ProgressCallback): Promise<ImageData | null> {
+  try {
+    onProgress?.('加载分割模型', 30);
+    const segmentation = await loadSelfieSegmentation();
+    
+    onProgress?.('运行图像分割', 50);
+    
+    const canvas = document.createElement('canvas');
+    canvas.width = imageData.width;
+    canvas.height = imageData.height;
+    const ctx = canvas.getContext('2d')!;
+    ctx.putImageData(imageData, 0, 0);
+    
+    return new Promise((resolve) => {
+      segmentation.onResults((results) => {
+        if (results.segmentationMask) {
+          const maskCanvas = document.createElement('canvas');
+          maskCanvas.width = imageData.width;
+          maskCanvas.height = imageData.height;
+          const maskCtx = maskCanvas.getContext('2d')!;
+          maskCtx.drawImage(results.segmentationMask, 0, 0, imageData.width, imageData.height);
+          const maskData = maskCtx.getImageData(0, 0, imageData.width, imageData.height);
+          logger.info('Segmentation mask generated');
+          resolve(maskData);
+        } else {
+          logger.warn('No segmentation mask generated');
+          resolve(null);
+        }
+      });
+      
+      segmentation.send({ image: canvas });
+    });
+  } catch (error) {
+    logger.error('Segmentation error', error);
+    return null;
+  }
+}
+
+export async function detectPose(
+  imageData: ImageData,
+  onProgress?: ProgressCallback
+): Promise<PoseResult | null> {
+  logger.info('Starting hybrid pose detection', { width: imageData.width, height: imageData.height });
+  
+  try {
+    const yoloResult = await detectWithYOLO(imageData, onProgress);
+    
+    if (!yoloResult) {
+      logger.warn('YOLO detection failed, returning null');
+      return null;
+    }
+    
+    onProgress?.('生成分割蒙版', 70);
+    const segmentationMask = await getSegmentationMask(imageData, onProgress);
+    
+    onProgress?.('完成检测', 100);
+    
+    return {
+      ...yoloResult,
+      segmentationMask: segmentationMask || undefined,
+    };
+  } catch (error) {
+    logger.error('Hybrid pose detection error', error);
     return null;
   }
 }
@@ -157,8 +275,7 @@ export function getBodyPartsFromKeypoints(
   const parts = new Map<string, { x: number; y: number; width: number; height: number }>();
   
   const getKeypoint = (name: string): Keypoint | undefined => {
-    const idx = KEYPOINT_NAMES.indexOf(name);
-    return idx >= 0 ? keypoints[idx] : undefined;
+    return keypoints.find(k => k.name === name);
   };
   
   const leftShoulder = getKeypoint('left_shoulder');
@@ -174,21 +291,27 @@ export function getBodyPartsFromKeypoints(
   const rightAnkle = getKeypoint('right_ankle');
   const leftElbow = getKeypoint('left_elbow');
   const rightElbow = getKeypoint('right_elbow');
-  const leftWrist = getKeypoint('left_wrist');
-  const rightWrist = getKeypoint('right_wrist');
   
-  if (nose && leftEar && rightEar) {
-    const headTop = Math.min(leftEar.y, rightEar.y, nose.y) - 20;
-    const headBottom = Math.max(leftEar.y, rightEar.y, nose.y) + 10;
-    const headLeft = Math.min(leftEar.x, rightEar.x, nose.x) - 15;
-    const headRight = Math.max(leftEar.x, rightEar.x, nose.x) + 15;
+  if (nose && (leftEar || rightEar)) {
+    const ears = [leftEar, rightEar].filter(Boolean) as Keypoint[];
+    const validEars = ears.filter(e => e.confidence > 0.3);
     
-    parts.set('head', {
-      x: Math.max(0, headLeft),
-      y: Math.max(0, headTop),
-      width: Math.min(imageData.width, headRight - headLeft),
-      height: Math.min(imageData.height, headBottom - headTop),
-    });
+    if (validEars.length > 0 || nose.confidence > 0.3) {
+      const allX = [nose.x, ...validEars.map(e => e.x)];
+      const allY = [nose.y, ...validEars.map(e => e.y)];
+      
+      const headLeft = Math.min(...allX) - 20;
+      const headRight = Math.max(...allX) + 20;
+      const headTop = Math.min(...allY) - 30;
+      const headBottom = Math.max(...allY) + 15;
+      
+      parts.set('head', {
+        x: Math.max(0, headLeft),
+        y: Math.max(0, headTop),
+        width: Math.min(imageData.width, headRight - headLeft),
+        height: Math.min(imageData.height, headBottom - headTop),
+      });
+    }
   }
   
   if (leftShoulder && rightShoulder && leftHip && rightHip) {
@@ -196,77 +319,110 @@ export function getBodyPartsFromKeypoints(
     const hipY = (leftHip.y + rightHip.y) / 2;
     const shoulderWidth = Math.abs(rightShoulder.x - leftShoulder.x);
     
+    const bodyX = Math.min(leftShoulder.x, rightShoulder.x) - shoulderWidth * 0.1;
+    const bodyWidth = shoulderWidth * 1.2;
+    
     parts.set('body', {
-      x: Math.max(0, (leftShoulder.x + rightShoulder.x) / 2 - shoulderWidth / 2),
+      x: Math.max(0, bodyX),
       y: Math.max(0, shoulderY),
-      width: Math.min(imageData.width, shoulderWidth * 1.2),
-      height: Math.min(imageData.height, hipY - shoulderY),
+      width: Math.min(imageData.width, bodyWidth),
+      height: Math.min(imageData.height, Math.max(10, hipY - shoulderY)),
     });
   }
   
   if (leftShoulder && leftElbow) {
-    const armTop = Math.min(leftShoulder.y, leftElbow.y) - 10;
-    const armBottom = Math.max(leftShoulder.y, leftElbow.y) + 10;
-    const armLeft = Math.min(leftShoulder.x, leftElbow.x) - 10;
-    const armRight = Math.max(leftShoulder.x, leftElbow.x) + 10;
+    const armX = Math.min(leftShoulder.x, leftElbow.x) - 15;
+    const armX2 = Math.max(leftShoulder.x, leftElbow.x) + 15;
+    const armY = Math.min(leftShoulder.y, leftElbow.y) - 10;
+    const armY2 = Math.max(leftShoulder.y, leftElbow.y) + 10;
     
     parts.set('leftArm', {
-      x: Math.max(0, armLeft),
-      y: Math.max(0, armTop),
-      width: Math.min(imageData.width, armRight - armLeft),
-      height: Math.min(imageData.height, armBottom - armTop),
+      x: Math.max(0, armX),
+      y: Math.max(0, armY),
+      width: Math.min(imageData.width, armX2 - armX),
+      height: Math.min(imageData.height, armY2 - armY),
     });
   }
   
   if (rightShoulder && rightElbow) {
-    const armTop = Math.min(rightShoulder.y, rightElbow.y) - 10;
-    const armBottom = Math.max(rightShoulder.y, rightElbow.y) + 10;
-    const armLeft = Math.min(rightShoulder.x, rightElbow.x) - 10;
-    const armRight = Math.max(rightShoulder.x, rightElbow.x) + 10;
+    const armX = Math.min(rightShoulder.x, rightElbow.x) - 15;
+    const armX2 = Math.max(rightShoulder.x, rightElbow.x) + 15;
+    const armY = Math.min(rightShoulder.y, rightElbow.y) - 10;
+    const armY2 = Math.max(rightShoulder.y, rightElbow.y) + 10;
     
     parts.set('rightArm', {
-      x: Math.max(0, armLeft),
-      y: Math.max(0, armTop),
-      width: Math.min(imageData.width, armRight - armLeft),
-      height: Math.min(imageData.height, armBottom - armTop),
+      x: Math.max(0, armX),
+      y: Math.max(0, armY),
+      width: Math.min(imageData.width, armX2 - armX),
+      height: Math.min(imageData.height, armY2 - armY),
     });
   }
   
-  if (leftHip && leftKnee && leftAnkle) {
-    const legTop = Math.min(leftHip.y, leftKnee.y);
-    const legBottom = Math.max(leftKnee.y, leftAnkle.y);
-    const legLeft = Math.min(leftHip.x, leftKnee.x, leftAnkle.x) - 10;
-    const legRight = Math.max(leftHip.x, leftKnee.x, leftAnkle.x) + 10;
+  if (leftHip && leftKnee) {
+    const legX = Math.min(leftHip.x, leftKnee.x) - 15;
+    const legX2 = Math.max(leftHip.x, leftKnee.x) + 15;
+    const legY = Math.min(leftHip.y, leftKnee.y) - 5;
+    const legY2 = leftAnkle ? Math.max(leftKnee.y, leftAnkle.y) + 10 : leftKnee.y + 30;
     
     parts.set('leftLeg', {
-      x: Math.max(0, legLeft),
-      y: Math.max(0, legTop),
-      width: Math.min(imageData.width, legRight - legLeft),
-      height: Math.min(imageData.height, legBottom - legTop),
+      x: Math.max(0, legX),
+      y: Math.max(0, legY),
+      width: Math.min(imageData.width, legX2 - legX),
+      height: Math.min(imageData.height, legY2 - legY),
     });
   }
   
-  if (rightHip && rightKnee && rightAnkle) {
-    const legTop = Math.min(rightHip.y, rightKnee.y);
-    const legBottom = Math.max(rightKnee.y, rightAnkle.y);
-    const legLeft = Math.min(rightHip.x, rightKnee.x, rightAnkle.x) - 10;
-    const legRight = Math.max(rightHip.x, rightKnee.x, rightAnkle.x) + 10;
+  if (rightHip && rightKnee) {
+    const legX = Math.min(rightHip.x, rightKnee.x) - 15;
+    const legX2 = Math.max(rightHip.x, rightKnee.x) + 15;
+    const legY = Math.min(rightHip.y, rightKnee.y) - 5;
+    const legY2 = rightAnkle ? Math.max(rightKnee.y, rightAnkle.y) + 10 : rightKnee.y + 30;
     
     parts.set('rightLeg', {
-      x: Math.max(0, legLeft),
-      y: Math.max(0, legTop),
-      width: Math.min(imageData.width, legRight - legLeft),
-      height: Math.min(imageData.height, legBottom - legTop),
+      x: Math.max(0, legX),
+      y: Math.max(0, legY),
+      width: Math.min(imageData.width, legX2 - legX),
+      height: Math.min(imageData.height, legY2 - legY),
     });
   }
   
+  logger.info('Body parts extracted from keypoints', { partsCount: parts.size });
+  
   return parts;
+}
+
+export function applySegmentationMask(
+  imageData: ImageData,
+  mask: ImageData,
+  threshold: number = 0.5
+): ImageData {
+  const result = new ImageData(imageData.width, imageData.height);
+  
+  for (let i = 0; i < mask.data.length; i += 4) {
+    const maskValue = mask.data[i] / 255;
+    
+    if (maskValue > threshold) {
+      result.data[i] = imageData.data[i];
+      result.data[i + 1] = imageData.data[i + 1];
+      result.data[i + 2] = imageData.data[i + 2];
+      result.data[i + 3] = imageData.data[i + 3];
+    } else {
+      result.data[i] = 0;
+      result.data[i + 1] = 0;
+      result.data[i + 2] = 0;
+      result.data[i + 3] = 0;
+    }
+  }
+  
+  return result;
 }
 
 export const poseDetector = {
   detectPose,
   getBodyPartsFromKeypoints,
-  loadModel,
+  loadYOLOModel,
+  loadSelfieSegmentation,
+  applySegmentationMask,
 };
 
 export default poseDetector;

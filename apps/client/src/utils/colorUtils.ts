@@ -140,3 +140,16 @@ export function blendColors(base: Color, overlay: Color): Color {
     a: Math.min(255, Math.round(base.a + overlay.a * (1 - base.a / 255))),
   };
 }
+
+export function quantizeColor(color: Color, levels: number = 256): Color {
+  if (levels <= 1) return color;
+  
+  const step = 255 / (levels - 1);
+  
+  return {
+    r: Math.round(Math.round(color.r / step) * step),
+    g: Math.round(Math.round(color.g / step) * step),
+    b: Math.round(Math.round(color.b / step) * step),
+    a: color.a,
+  };
+}

@@ -1,4 +1,6 @@
 import { useState, useCallback, useEffect } from 'react';
+import { save } from '@tauri-apps/plugin-dialog';
+import { writeFile } from '@tauri-apps/plugin-fs';
 import {
   Button,
   Upload,
@@ -15,6 +17,7 @@ import {
   Select,
   Radio,
   Typography,
+  Progress,
 } from 'antd';
 import {
   UploadOutlined,
@@ -23,8 +26,6 @@ import {
   EyeOutlined,
   EditOutlined,
   SettingOutlined,
-  CloudUploadOutlined,
-  CloudSyncOutlined,
   FileImageOutlined,
   SkinOutlined,
 } from '@ant-design/icons';
@@ -34,12 +35,18 @@ import { skinConverter, ConversionOptions, ConversionResult } from '@/utils';
 import { useSkinStore } from '@/stores/skinStore';
 import { useUserStore } from '@/stores/userStore';
 import { apiService } from '@/services/api';
+import { logger } from '@/utils/logger';
 import styles from './Editor.module.css';
 
 const { Text } = Typography;
 
 type SaveTarget = 'local' | 'server' | 'both';
 type ImportMode = 'image' | 'skin';
+
+interface ConversionProgress {
+  stage: string;
+  progress: number;
+}
 
 function Editor() {
   const [image, setImage] = useState<string | null>(null);
@@ -51,6 +58,8 @@ function Editor() {
   const [showSettings, setShowSettings] = useState(false);
   const [saveTarget, setSaveTarget] = useState<SaveTarget>('local');
   const [importMode, setImportMode] = useState<ImportMode>('image');
+  const [isConverting, setIsConverting] = useState(false);
+  const [conversionProgress, setConversionProgress] = useState<ConversionProgress | null>(null);
   
   const { saveSkin, skins, loadSkins } = useSkinStore();
   const { user, token } = useUserStore();
@@ -61,6 +70,8 @@ function Editor() {
     brightness: 1.0,
     contrast: 1.0,
     saturation: 1.0,
+    useAI: true,
+    useSegmentation: true,
   });
 
   useEffect(() => {
@@ -109,7 +120,9 @@ function Editor() {
         });
         
         message.success('皮肤文件已导入！');
-      } catch {
+        logger.info('Skin file imported');
+      } catch (error) {
+        logger.error('Failed to import skin file', error);
         message.error('导入皮肤文件失败');
       }
     };
@@ -126,26 +139,60 @@ function Editor() {
   };
 
   const convertToSkin = async (imageSrc: string) => {
+    setIsConverting(true);
+    setConversionProgress({ stage: '准备中', progress: 0 });
+    
     try {
-      message.loading({ content: '正在转换皮肤...', key: 'convert' });
+      logger.info('Starting skin conversion');
       
-      const result = await skinConverter.convert(imageSrc, options);
+      const result = await skinConverter.convert(
+        imageSrc,
+        options,
+        (stage, progress) => {
+          setConversionProgress({ stage, progress });
+        }
+      );
+      
       setConversionResult(result);
-      
-      message.success({ content: '皮肤转换成功！', key: 'convert' });
-    } catch {
-      message.error({ content: '转换失败，请重试', key: 'convert' });
+      setConversionProgress({ stage: '完成', progress: 100 });
+      message.success('皮肤转换成功！');
+      logger.info('Skin conversion completed');
+    } catch (error) {
+      logger.error('Skin conversion failed', error);
+      message.error('转换失败，请重试');
+    } finally {
+      setIsConverting(false);
     }
   };
 
-  const handleDownload = () => {
+  const handleDownload = async () => {
     if (!conversionResult?.skinUrl) return;
 
-    const link = document.createElement('a');
-    link.download = `${skinName}.png`;
-    link.href = conversionResult.skinUrl;
-    link.click();
-    message.success('皮肤已下载！');
+    try {
+      const filePath = await save({
+        defaultPath: `${skinName}.png`,
+        filters: [{ name: 'PNG Image', extensions: ['png'] }],
+      });
+      
+      if (filePath) {
+        const base64Data = conversionResult.skinUrl.split(',')[1];
+        const binaryString = atob(base64Data);
+        const bytes = new Uint8Array(binaryString.length);
+        for (let i = 0; i < binaryString.length; i++) {
+          bytes[i] = binaryString.charCodeAt(i);
+        }
+        
+        await writeFile(filePath, bytes);
+        message.success('皮肤已保存！');
+        logger.info('Skin saved to file', { path: filePath });
+      }
+    } catch (error) {
+      logger.error('Failed to save skin file', error);
+      const link = document.createElement('a');
+      link.download = `${skinName}.png`;
+      link.href = conversionResult.skinUrl;
+      link.click();
+    }
   };
 
   const handleSave = async () => {
@@ -162,6 +209,7 @@ function Editor() {
         );
         if (savedSkin) {
           message.success('皮肤已保存到本地皮肤库！');
+          logger.info('Skin saved to local storage');
         } else {
           message.error('保存到本地失败');
           return;
@@ -182,14 +230,15 @@ function Editor() {
           await apiService.createSkin({
             name: skinName,
             description: skinDescription,
-            filePath: uploadResult.filePath,
+            filePath: uploadResult.path,
             previewPath: conversionResult.previewUrl,
             isPublic: false,
           });
           
           message.success('皮肤已保存到云端！');
+          logger.info('Skin saved to cloud');
         } catch (serverError) {
-          console.error('Server save error:', serverError);
+          logger.error('Failed to save to cloud', serverError);
           if (saveTarget === 'both') {
             message.warning('本地保存成功，但云端保存失败');
           } else {
@@ -198,7 +247,7 @@ function Editor() {
         }
       }
     } catch (error) {
-      console.error('Save error:', error);
+      logger.error('Save error', error);
       message.error('保存失败');
     } finally {
       setIsSaving(false);
@@ -265,6 +314,7 @@ function Editor() {
               beforeUpload={handleUpload}
               showUploadList={false}
               className={styles.uploader}
+              disabled={isConverting}
             >
               {image ? (
                 <img src={image} alt="preview" className={styles.previewImage} />
@@ -279,8 +329,25 @@ function Editor() {
               )}
             </Upload.Dragger>
 
+            {isConverting && conversionProgress && (
+              <div className={styles.progressContainer}>
+                <Progress 
+                  percent={conversionProgress.progress} 
+                  status="active"
+                  format={() => conversionProgress.stage}
+                />
+              </div>
+            )}
+
             {importMode === 'image' && (
               <div className={styles.optionsPanel}>
+                <div className={styles.optionItem}>
+                  <span>使用AI检测</span>
+                  <Switch
+                    checked={options.useAI}
+                    onChange={(checked: boolean) => handleOptionChange('useAI', checked)}
+                  />
+                </div>
                 <div className={styles.optionItem}>
                   <span>自动去除背景</span>
                   <Switch
@@ -458,6 +525,20 @@ function Editor() {
         footer={null}
       >
         <div className={styles.settingsModal}>
+          <div className={styles.settingItem}>
+            <span>使用AI姿态检测</span>
+            <Switch 
+              checked={options.useAI}
+              onChange={(checked: boolean) => handleOptionChange('useAI', checked)}
+            />
+          </div>
+          <div className={styles.settingItem}>
+            <span>使用图像分割</span>
+            <Switch 
+              checked={options.useSegmentation}
+              onChange={(checked: boolean) => handleOptionChange('useSegmentation', checked)}
+            />
+          </div>
           <div className={styles.settingItem}>
             <span>自动检测身体部位</span>
             <Switch defaultChecked />

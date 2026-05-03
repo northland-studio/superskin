@@ -49,6 +49,14 @@
   border-radius: 6px;
 }
 
+.progressContainer {
+  margin-top: 16px;
+  padding: 12px;
+  background: #e6f7ff;
+  border-radius: 6px;
+  border: 1px solid #91d5ff;
+}
+
 .optionItem {
   display: flex;
   align-items: center;
