@@ -528,7 +528,7 @@ function Editor() {
                         skinUrl={conversionResult?.skinUrl || null}
                         width={400}
                         height={400}
-                        animate={true}
+                        animate={false}
                       />
                       {conversionResult?.skinUrl && (
                         <div className={styles.skin2DPreview}>
