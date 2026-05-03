@@ -22,6 +22,7 @@ fn main() {
             commands::save_user,
             commands::get_user,
             commands::clear_user,
+            commands::save_thumbnail,
             commands::http_post,
             commands::http_get,
             commands::http_upload_file,
