@@ -9,23 +9,14 @@ import { logger } from '@/utils/logger';
 import styles from './Gallery.module.css';
 
 function Gallery() {
-  const { skins, loadSkins, deleteSkin, isLoading } = useSkinStore();
-  const { user, token, isLoggedIn } = useUserStore();
+  const { skins, loadSkins, deleteSkin, addSkin, isLoading } = useSkinStore();
+  const { user, token } = useUserStore();
   const navigate = useNavigate();
   const [syncing, setSyncing] = useState(false);
 
   useEffect(() => {
     loadSkins();
   }, [loadSkins]);
-
-  useEffect(() => {
-    logger.info('Gallery state', { 
-      hasUser: !!user, 
-      hasToken: !!token, 
-      isLoggedIn,
-      tokenValue: token ? 'exists' : 'null'
-    });
-  }, [user, token, isLoggedIn]);
 
   const handleDownload = (skin: { id: string; name: string; skinData: string }) => {
     const link = document.createElement('a');
@@ -49,15 +40,8 @@ function Gallery() {
   };
 
   const handleSyncToServer = async () => {
-    logger.info('Sync to server clicked', { hasUser: !!user, hasToken: !!token });
-    
-    if (!user) {
+    if (!user || !token) {
       message.warning('请先登录以同步到云端');
-      return;
-    }
-
-    if (!token) {
-      message.warning('登录状态异常，请重新登录');
       return;
     }
 
@@ -68,15 +52,11 @@ function Gallery() {
       let successCount = 0;
       for (const skin of skins) {
         try {
-          logger.info('Syncing skin', { name: skin.name });
-          
           const response = await fetch(skin.skinData);
           const blob = await response.blob();
           const file = new File([blob], `${skin.name}.png`, { type: 'image/png' });
           
-          logger.info('Uploading skin file', { name: skin.name, size: file.size });
           const uploadResult = await apiService.uploadSkin(file);
-          logger.info('Upload result', { filePath: uploadResult.filePath, fileName: uploadResult.fileName });
           
           await apiService.createSkin({
             name: skin.name,
@@ -102,15 +82,8 @@ function Gallery() {
   };
 
   const handleSyncFromServer = async () => {
-    logger.info('Sync from server clicked', { hasUser: !!user, hasToken: !!token });
-    
-    if (!user) {
+    if (!user || !token) {
       message.warning('请先登录以从云端同步');
-      return;
-    }
-
-    if (!token) {
-      message.warning('登录状态异常，请重新登录');
       return;
     }
 
@@ -123,8 +96,62 @@ function Gallery() {
       
       logger.info('Server skins fetched', { count: serverSkins?.length || 0 });
       
-      if (Array.isArray(serverSkins)) {
-        message.success(`从云端获取了 ${serverSkins.length} 个皮肤`);
+      if (Array.isArray(serverSkins) && serverSkins.length > 0) {
+        let downloadedCount = 0;
+        
+        for (const serverSkin of serverSkins) {
+          try {
+            if (skins.find(s => s.skinData === apiService.getSkinUrl(serverSkin.filePath))) {
+              logger.info('Skin already exists locally, skipping', { name: serverSkin.name });
+              continue;
+            }
+            
+            const skinUrl = apiService.getSkinUrl(serverSkin.filePath);
+            logger.info('Downloading skin from server', { name: serverSkin.name, url: skinUrl });
+            
+            const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+              const image = new Image();
+              image.crossOrigin = 'anonymous';
+              image.onload = () => resolve(image);
+              image.onerror = reject;
+              image.src = skinUrl;
+            });
+            
+            const canvas = document.createElement('canvas');
+            canvas.width = 64;
+            canvas.height = 64;
+            const ctx = canvas.getContext('2d')!;
+            ctx.imageSmoothingEnabled = false;
+            ctx.drawImage(img, 0, 0, 64, 64);
+            const skinDataUrl = canvas.toDataURL('image/png');
+            
+            const previewCanvas = document.createElement('canvas');
+            previewCanvas.width = 256;
+            previewCanvas.height = 256;
+            const previewCtx = previewCanvas.getContext('2d')!;
+            previewCtx.imageSmoothingEnabled = false;
+            previewCtx.drawImage(img, 0, 0, 256, 256);
+            const previewDataUrl = previewCanvas.toDataURL('image/png');
+            
+            const localSkin = await useSkinStore.getState().saveSkin(
+              serverSkin.name,
+              skinDataUrl,
+              previewDataUrl,
+              serverSkin.description
+            );
+            
+            if (localSkin) {
+              downloadedCount++;
+              logger.info('Skin downloaded and saved locally', { name: serverSkin.name });
+            }
+          } catch (err) {
+            logger.error('Failed to download skin', { name: serverSkin.name, error: String(err) });
+          }
+        }
+        
+        message.success(`从云端下载了 ${downloadedCount} 个皮肤`);
+      } else {
+        message.info('云端暂无皮肤');
       }
     } catch (error) {
       logger.error('Sync from server failed', error);
@@ -132,6 +159,10 @@ function Gallery() {
     } finally {
       setSyncing(false);
     }
+  };
+
+  const handleCardClick = (skinId: string) => {
+    navigate(`/editor?skin=${skinId}`);
   };
 
   if (isLoading) {
@@ -146,9 +177,16 @@ function Gallery() {
     return (
       <div className={styles.empty}>
         <Empty description="暂无皮肤，快去创作吧！" />
-        <Button type="primary" onClick={() => navigate('/editor')} style={{ marginTop: 16 }}>
-          开始创作
-        </Button>
+        <Space direction="vertical" size={16}>
+          <Button type="primary" onClick={() => navigate('/editor')}>
+            开始创作
+          </Button>
+          {user && token && (
+            <Button icon={<CloudSyncOutlined />} onClick={handleSyncFromServer} loading={syncing}>
+              从云端同步
+            </Button>
+          )}
+        </Space>
       </div>
     );
   }
@@ -178,14 +216,6 @@ function Gallery() {
               </Button>
             </>
           )}
-          {!showCloudButtons && user && (
-            <Button 
-              type="link"
-              onClick={() => message.info('请重新登录以使用云端功能')}
-            >
-              云端功能需要重新登录
-            </Button>
-          )}
         </Space>
       </div>
       <Row gutter={[16, 16]}>
@@ -194,7 +224,7 @@ function Gallery() {
             <Card
               hoverable
               cover={
-                <div className={styles.preview}>
+                <div className={styles.preview} onClick={() => handleCardClick(skin.id)}>
                   {skin.previewData ? (
                     <img alt={skin.name} src={skin.previewData} />
                   ) : (
