@@ -7,14 +7,23 @@ export interface Tool {
   id: string;
   name: string;
   cursor: string;
+  shortcut?: string;
 }
 
 export const TOOLS: Tool[] = [
-  { id: 'pencil', name: '画笔', cursor: 'crosshair' },
-  { id: 'eraser', name: '橡皮擦', cursor: 'crosshair' },
-  { id: 'fill', name: '填充', cursor: 'crosshair' },
-  { id: 'picker', name: '取色器', cursor: 'crosshair' },
+  { id: 'pencil', name: '画笔', cursor: 'crosshair', shortcut: 'B' },
+  { id: 'eraser', name: '橡皮擦', cursor: 'crosshair', shortcut: 'E' },
+  { id: 'fill', name: '油漆桶', cursor: 'crosshair', shortcut: 'G' },
+  { id: 'picker', name: '取色器', cursor: 'crosshair', shortcut: 'I' },
+  { id: 'select', name: '框选', cursor: 'crosshair', shortcut: 'M' },
 ];
+
+interface Selection {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
 
 interface PixelEditorProps {
   initialImageData?: ImageData;
@@ -30,6 +39,7 @@ export function PixelEditor({
   height = 512,
 }: PixelEditorProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const overlayRef = useRef<HTMLCanvasElement>(null);
   const [imageData, setImageData] = useState<ImageData | null>(null);
   const [currentTool, setCurrentTool] = useState<string>('pencil');
   const [currentColor, setCurrentColor] = useState<Color>({ r: 0, g: 0, b: 0, a: 255 });
@@ -38,6 +48,12 @@ export function PixelEditor({
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [zoom, setZoom] = useState(1);
   const [showGrid, setShowGrid] = useState(true);
+
+  const [selection, setSelection] = useState<Selection | null>(null);
+  const [selectStart, setSelectStart] = useState<{ x: number; y: number } | null>(null);
+  const [selecting, setSelecting] = useState(false);
+  const [clipboard, setClipboard] = useState<ImageData | null>(null);
+  const [previewSel, setPreviewSel] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
 
   const pixelSize = Math.floor(Math.min(width, height) / SKIN_WIDTH);
 
@@ -61,6 +77,42 @@ export function PixelEditor({
       saveToHistory(emptyData);
     }
   }, [initialImageData, pixelSize]);
+
+  useEffect(() => {
+    const ov = overlayRef.current;
+    if (!ov) return;
+    ov.width = SKIN_WIDTH * pixelSize;
+    ov.height = SKIN_HEIGHT * pixelSize;
+
+    const ctx = ov.getContext('2d')!;
+    ctx.clearRect(0, 0, ov.width, ov.height);
+
+    if (selection) {
+      ctx.strokeStyle = '#40a9ff';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([4, 4]);
+      ctx.strokeRect(
+        selection.x * pixelSize + 0.5,
+        selection.y * pixelSize + 0.5,
+        selection.width * pixelSize - 1,
+        selection.height * pixelSize - 1
+      );
+      ctx.setLineDash([]);
+    }
+
+    if (previewSel) {
+      ctx.strokeStyle = '#ff7875';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([2, 4]);
+      ctx.strokeRect(
+        previewSel.x * pixelSize + 0.5,
+        previewSel.y * pixelSize + 0.5,
+        previewSel.w * pixelSize - 1,
+        previewSel.h * pixelSize - 1
+      );
+      ctx.setLineDash([]);
+    }
+  }, [selection, previewSel, pixelSize]);
 
   const drawCanvas = useCallback((ctx: CanvasRenderingContext2D, data: ImageData) => {
     ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
@@ -156,10 +208,107 @@ export function PixelEditor({
     }
   }, [getPixel, setPixel]);
 
+  const copySelection = useCallback(() => {
+    if (!selection || !imageData) return;
+    const w = selection.width;
+    const h = selection.height;
+    const copy = new ImageData(w, h);
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const si = ((selection.y + y) * SKIN_WIDTH + (selection.x + x)) * 4;
+        const di = (y * w + x) * 4;
+        copy.data[di] = imageData.data[si];
+        copy.data[di + 1] = imageData.data[si + 1];
+        copy.data[di + 2] = imageData.data[si + 2];
+        copy.data[di + 3] = imageData.data[si + 3];
+      }
+    }
+    setClipboard(copy);
+    setPreviewSel({ x: selection.x, y: selection.y, w, h });
+  }, [selection, imageData]);
+
+  const cutSelection = useCallback(() => {
+    if (!selection || !imageData) return;
+    copySelection();
+    const newData = new ImageData(SKIN_WIDTH, SKIN_HEIGHT);
+    newData.data.set(imageData.data);
+    for (let y = 0; y < selection.height; y++) {
+      for (let x = 0; x < selection.width; x++) {
+        setPixel(newData, selection.x + x, selection.y + y, { r: 0, g: 0, b: 0, a: 0 });
+      }
+    }
+    setImageData(newData);
+    const ctx = canvasRef.current!.getContext('2d')!;
+    drawCanvas(ctx, newData);
+    saveToHistory(newData);
+    onImageChange?.(newData);
+  }, [selection, imageData, copySelection, setPixel, drawCanvas, saveToHistory, onImageChange]);
+
+  const pasteSelection = useCallback(() => {
+    if (!clipboard || !imageData) return;
+    const newData = new ImageData(SKIN_WIDTH, SKIN_HEIGHT);
+    newData.data.set(imageData.data);
+    const px = selection?.x ?? 0;
+    const py = selection?.y ?? 0;
+    const cw = Math.min(clipboard.width, SKIN_WIDTH - px);
+    const ch = Math.min(clipboard.height, SKIN_HEIGHT - py);
+    for (let y = 0; y < ch; y++) {
+      for (let x = 0; x < cw; x++) {
+        const si = (y * clipboard.width + x) * 4;
+        const a = clipboard.data[si + 3];
+        if (a > 0) {
+          const di = ((py + y) * SKIN_WIDTH + (px + x)) * 4;
+          newData.data[di] = clipboard.data[si];
+          newData.data[di + 1] = clipboard.data[si + 1];
+          newData.data[di + 2] = clipboard.data[si + 2];
+          newData.data[di + 3] = clipboard.data[si + 3];
+        }
+      }
+    }
+    setImageData(newData);
+    const ctx = canvasRef.current!.getContext('2d')!;
+    drawCanvas(ctx, newData);
+    saveToHistory(newData);
+    onImageChange?.(newData);
+    setSelection({ x: px, y: py, width: cw, height: ch });
+  }, [clipboard, imageData, selection, drawCanvas, saveToHistory, onImageChange]);
+
+  const handleKeyDown = useCallback((e: KeyboardEvent) => {
+    if (e.ctrlKey && e.key === 'c') {
+      e.preventDefault();
+      copySelection();
+    } else if (e.ctrlKey && e.key === 'x') {
+      e.preventDefault();
+      cutSelection();
+    } else if (e.ctrlKey && e.key === 'v') {
+      e.preventDefault();
+      pasteSelection();
+    } else if (e.ctrlKey && e.key === 'z') {
+      e.preventDefault();
+      undo();
+    } else if (e.ctrlKey && e.key === 'y') {
+      e.preventDefault();
+      redo();
+    }
+  }, [copySelection, cutSelection, pasteSelection]);
+
+  useEffect(() => {
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleKeyDown]);
+
   const handleMouseDown = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
     if (!imageData) return;
 
     const { x, y } = getPixelCoords(e);
+
+    if (currentTool === 'select') {
+      setSelectStart({ x, y });
+      setSelecting(true);
+      setSelection(null);
+      return;
+    }
+
     const newData = new ImageData(SKIN_WIDTH, SKIN_HEIGHT);
     newData.data.set(imageData.data);
 
@@ -186,9 +335,19 @@ export function PixelEditor({
   }, [imageData, currentTool, currentColor, setPixel, floodFill, getPixel, drawCanvas, pixelSize]);
 
   const handleMouseMove = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!isDrawing || !imageData || currentTool === 'fill' || currentTool === 'picker') return;
-
     const { x, y } = getPixelCoords(e);
+
+    if (selecting && selectStart) {
+      const sx = Math.min(selectStart.x, x);
+      const sy = Math.min(selectStart.y, y);
+      const sw = Math.abs(x - selectStart.x) + 1;
+      const sh = Math.abs(y - selectStart.y) + 1;
+      setPreviewSel({ x: sx, y: sy, w: sw, h: sh });
+      return;
+    }
+
+    if (!isDrawing || !imageData || currentTool === 'fill' || currentTool === 'picker' || currentTool === 'select') return;
+
     const newData = new ImageData(SKIN_WIDTH, SKIN_HEIGHT);
     newData.data.set(imageData.data);
 
@@ -201,15 +360,23 @@ export function PixelEditor({
     setImageData(newData);
     const ctx = canvasRef.current!.getContext('2d')!;
     drawCanvas(ctx, newData);
-  }, [isDrawing, imageData, currentTool, currentColor, setPixel, drawCanvas, pixelSize]);
+  }, [isDrawing, imageData, currentTool, currentColor, setPixel, drawCanvas, pixelSize, selecting, selectStart]);
 
   const handleMouseUp = useCallback(() => {
+    if (selecting && selectStart && previewSel) {
+      setSelection({ x: previewSel.x, y: previewSel.y, width: previewSel.w, height: previewSel.h });
+      setSelecting(false);
+      setSelectStart(null);
+      setPreviewSel(null);
+      return;
+    }
+
     if (isDrawing && imageData) {
       saveToHistory(imageData);
       onImageChange?.(imageData);
     }
     setIsDrawing(false);
-  }, [isDrawing, imageData, saveToHistory, onImageChange]);
+  }, [isDrawing, imageData, saveToHistory, onImageChange, selecting, selectStart, previewSel]);
 
   const undo = useCallback(() => {
     if (historyIndex > 0) {
@@ -242,7 +409,14 @@ export function PixelEditor({
     drawCanvas(ctx, emptyData);
     saveToHistory(emptyData);
     onImageChange?.(emptyData);
+    setSelection(null);
+    setClipboard(null);
   }, [drawCanvas, saveToHistory, onImageChange]);
+
+  const deselect = useCallback(() => {
+    setSelection(null);
+    setPreviewSel(null);
+  }, []);
 
   return (
     <div className={styles.editor}>
@@ -253,7 +427,7 @@ export function PixelEditor({
               key={tool.id}
               className={`${styles.toolButton} ${currentTool === tool.id ? styles.active : ''}`}
               onClick={() => setCurrentTool(tool.id)}
-              title={tool.name}
+              title={`${tool.name}${tool.shortcut ? ` (${tool.shortcut})` : ''}`}
             >
               {tool.name}
             </button>
@@ -281,12 +455,20 @@ export function PixelEditor({
         </div>
 
         <div className={styles.actions}>
-          <button onClick={undo} disabled={historyIndex <= 0}>撤销</button>
-          <button onClick={redo} disabled={historyIndex >= history.length - 1}>重做</button>
+          <button onClick={undo} disabled={historyIndex <= 0} title="Ctrl+Z">撤销</button>
+          <button onClick={redo} disabled={historyIndex >= history.length - 1} title="Ctrl+Y">重做</button>
           <button onClick={clear}>清空</button>
           <button onClick={() => setShowGrid(!showGrid)}>
             {showGrid ? '隐藏网格' : '显示网格'}
           </button>
+          {selection && (
+            <>
+              <button onClick={deselect}>取消选择</button>
+              <button onClick={copySelection}>复制</button>
+              <button onClick={cutSelection}>剪切</button>
+            </>
+          )}
+          {clipboard && <button onClick={pasteSelection}>粘贴</button>}
         </div>
 
         <div className={styles.zoom}>
@@ -296,15 +478,25 @@ export function PixelEditor({
         </div>
       </div>
 
-      <div className={styles.canvasContainer} style={{ transform: `scale(${zoom})` }}>
-        <canvas
-          ref={canvasRef}
-          className={styles.canvas}
-          onMouseDown={handleMouseDown}
-          onMouseMove={handleMouseMove}
-          onMouseUp={handleMouseUp}
-          onMouseLeave={handleMouseUp}
-        />
+      <div className={styles.canvasWrap} style={{ transform: `scale(${zoom})`, transformOrigin: 'top left' }}>
+        <div className={styles.canvasStack}>
+          <canvas
+            ref={canvasRef}
+            className={styles.canvas}
+            onMouseDown={handleMouseDown}
+            onMouseMove={handleMouseMove}
+            onMouseUp={handleMouseUp}
+            onMouseLeave={handleMouseUp}
+          />
+          <canvas
+            ref={overlayRef}
+            className={styles.overlay}
+            onMouseDown={handleMouseDown}
+            onMouseMove={handleMouseMove}
+            onMouseUp={handleMouseUp}
+            onMouseLeave={handleMouseUp}
+          />
+        </div>
       </div>
     </div>
   );

@@ -129,9 +129,35 @@
   transition: transform 0.2s;
 }
 
+.canvasWrap {
+  overflow: auto;
+  background: #e8e8e8;
+  border-radius: 6px;
+  padding: 20px;
+}
+
+.canvasStack {
+  position: relative;
+  display: inline-block;
+}
+
 .canvas {
   image-rendering: pixelated;
   cursor: crosshair;
   background: white;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  display: block;
+}
+
+.overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  image-rendering: pixelated;
+  pointer-events: none;
+  display: block;
+}
+
+.overlay.active {
+  pointer-events: auto;
 }
