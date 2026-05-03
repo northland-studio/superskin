@@ -25,6 +25,7 @@ fn main() {
             commands::save_thumbnail,
             commands::http_post,
             commands::http_get,
+            commands::http_download_bytes,
             commands::http_upload_file,
         ])
         .run(tauri::generate_context!())

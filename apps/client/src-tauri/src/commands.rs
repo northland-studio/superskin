@@ -317,6 +317,21 @@ pub async fn http_get(url: String, token: Option<String>) -> Result<String, Stri
 }
 
 #[tauri::command]
+pub async fn http_download_bytes(url: String) -> Result<String, String> {
+    let response = reqwest::get(&url)
+        .await
+        .map_err(|e| format!("Download failed: {}", e))?;
+
+    let status = response.status();
+    if !status.is_success() {
+        return Err(format!("HTTP {}: Download failed", status.as_u16()));
+    }
+
+    let bytes = response.bytes().await.map_err(|e| e.to_string())?;
+    Ok(general_purpose::STANDARD.encode(&bytes))
+}
+
+#[tauri::command]
 pub async fn http_upload_file(url: String, file_data: String, filename: String, token: Option<String>) -> Result<String, String> {
     let file_bytes = if file_data.starts_with("data:") {
         let base64_part = file_data.split(',').nth(1).unwrap_or("");

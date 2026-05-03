@@ -257,6 +257,15 @@ export const apiService = {
     if (path.startsWith('data:')) return path;
     return `${SERVER_BASE_URL}${path}`;
   },
+
+  async downloadSkinImage(filePath: string): Promise<string> {
+    const url = this.getSkinUrl(filePath);
+    logger.info('Downloading skin image via Rust', { url });
+    const base64 = await invoke<string>('http_download_bytes', { url });
+    const dataUrl = `data:image/png;base64,${base64}`;
+    logger.info('Skin image downloaded', { dataUrlLength: dataUrl.length });
+    return dataUrl;
+  },
 };
 
 export default apiService;

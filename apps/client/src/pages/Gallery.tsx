@@ -106,37 +106,14 @@ function Gallery() {
               continue;
             }
             
-            const skinUrl = apiService.getSkinUrl(serverSkin.filePath);
-            logger.info('Downloading skin from server', { name: serverSkin.name, url: skinUrl });
+            logger.info('Downloading skin from server', { name: serverSkin.name, filePath: serverSkin.filePath });
             
-            const img = await new Promise<HTMLImageElement>((resolve, reject) => {
-              const image = new Image();
-              image.crossOrigin = 'anonymous';
-              image.onload = () => resolve(image);
-              image.onerror = reject;
-              image.src = skinUrl;
-            });
-            
-            const canvas = document.createElement('canvas');
-            canvas.width = 64;
-            canvas.height = 64;
-            const ctx = canvas.getContext('2d')!;
-            ctx.imageSmoothingEnabled = false;
-            ctx.drawImage(img, 0, 0, 64, 64);
-            const skinDataUrl = canvas.toDataURL('image/png');
-            
-            const previewCanvas = document.createElement('canvas');
-            previewCanvas.width = 256;
-            previewCanvas.height = 256;
-            const previewCtx = previewCanvas.getContext('2d')!;
-            previewCtx.imageSmoothingEnabled = false;
-            previewCtx.drawImage(img, 0, 0, 256, 256);
-            const previewDataUrl = previewCanvas.toDataURL('image/png');
+            const skinDataUrl = await apiService.downloadSkinImage(serverSkin.filePath);
             
             const localSkin = await useSkinStore.getState().saveSkin(
               serverSkin.name,
               skinDataUrl,
-              previewDataUrl,
+              skinDataUrl,
               serverSkin.description
             );
             
