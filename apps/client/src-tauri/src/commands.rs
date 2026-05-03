@@ -1,8 +1,8 @@
-use crate::database::Database;
 use serde::{Deserialize, Serialize};
 use tauri::State;
 use uuid::Uuid;
 use chrono::Utc;
+use crate::database::Database;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Skin {
@@ -240,4 +240,117 @@ pub fn clear_user(db: State<'_, Database>) -> Result<(), String> {
         .map_err(|e| e.to_string())?;
 
     Ok(())
+}
+
+// HTTP API commands using reqwest
+use reqwest;
+use base64::{Engine as _, engine::general_purpose};
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ApiResponse<T> {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub data: Option<T>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub access_token: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub user: Option<T>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct UploadResult {
+    pub path: String,
+    pub filename: String,
+    pub url: String,
+}
+
+#[tauri::command]
+pub async fn http_post(url: String, body: String, token: Option<String>) -> Result<String, String> {
+    let client = reqwest::Client::new();
+    let mut request = client
+        .post(&url)
+        .header("Content-Type", "application/json")
+        .body(body);
+    
+    if let Some(t) = token {
+        request = request.header("Authorization", format!("Bearer {}", t));
+    }
+    
+    let response = request
+        .send()
+        .await
+        .map_err(|e| format!("Request failed: {}", e))?;
+    
+    let status = response.status();
+    let text = response.text().await.map_err(|e| e.to_string())?;
+    
+    if !status.is_success() {
+        return Err(format!("HTTP {}: {}", status.as_u16(), text));
+    }
+    
+    Ok(text)
+}
+
+#[tauri::command]
+pub async fn http_get(url: String, token: Option<String>) -> Result<String, String> {
+    let client = reqwest::Client::new();
+    let mut request = client.get(&url);
+    
+    if let Some(t) = token {
+        request = request.header("Authorization", format!("Bearer {}", t));
+    }
+    
+    let response = request
+        .send()
+        .await
+        .map_err(|e| format!("Request failed: {}", e))?;
+    
+    let status = response.status();
+    let text = response.text().await.map_err(|e| e.to_string())?;
+    
+    if !status.is_success() {
+        return Err(format!("HTTP {}: {}", status.as_u16(), text));
+    }
+    
+    Ok(text)
+}
+
+#[tauri::command]
+pub async fn http_upload_file(url: String, file_data: String, filename: String, token: Option<String>) -> Result<String, String> {
+    let file_bytes = if file_data.starts_with("data:") {
+        let base64_part = file_data.split(',').nth(1).unwrap_or("");
+        general_purpose::STANDARD.decode(base64_part).map_err(|e| format!("Base64 decode error: {}", e))?
+    } else {
+        general_purpose::STANDARD.decode(&file_data).map_err(|e| format!("Base64 decode error: {}", e))?
+    };
+    
+    let part = reqwest::multipart::Part::bytes(file_bytes)
+        .file_name(filename.clone())
+        .mime_str("image/png")
+        .map_err(|e| e.to_string())?;
+    
+    let form = reqwest::multipart::Form::new()
+        .part("file", part);
+    
+    let client = reqwest::Client::new();
+    let mut request = client.post(&url).multipart(form);
+    
+    if let Some(t) = token {
+        request = request.header("Authorization", format!("Bearer {}", t));
+    }
+    
+    let response = request
+        .send()
+        .await
+        .map_err(|e| format!("Upload failed: {}", e))?;
+    
+    let status = response.status();
+    let text = response.text().await.map_err(|e| e.to_string())?;
+    
+    if !status.is_success() {
+        return Err(format!("HTTP {}: {}", status.as_u16(), text));
+    }
+    
+    Ok(text)
 }

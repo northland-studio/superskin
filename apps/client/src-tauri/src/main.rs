@@ -22,6 +22,9 @@ fn main() {
             commands::save_user,
             commands::get_user,
             commands::clear_user,
+            commands::http_post,
+            commands::http_get,
+            commands::http_upload_file,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
