@@ -291,6 +291,16 @@ export function getBodyPartsFromKeypoints(
   const rightAnkle = getKeypoint('right_ankle');
   const leftElbow = getKeypoint('left_elbow');
   const rightElbow = getKeypoint('right_elbow');
+
+  const shoulderWidth = (leftShoulder && rightShoulder)
+    ? Math.abs(rightShoulder.x - leftShoulder.x)
+    : imageData.width * 0.3;
+
+  const headPadH = shoulderWidth * 0.35;
+  const headPadV = shoulderWidth * 0.25;
+  const bodyPadH = shoulderWidth * 0.15;
+  const limbPadH = shoulderWidth * 0.2;
+  const limbPadV = shoulderWidth * 0.1;
   
   if (nose && (leftEar || rightEar)) {
     const ears = [leftEar, rightEar].filter(Boolean) as Keypoint[];
@@ -300,10 +310,10 @@ export function getBodyPartsFromKeypoints(
       const allX = [nose.x, ...validEars.map(e => e.x)];
       const allY = [nose.y, ...validEars.map(e => e.y)];
       
-      const headLeft = Math.min(...allX) - 20;
-      const headRight = Math.max(...allX) + 20;
-      const headTop = Math.min(...allY) - 30;
-      const headBottom = Math.max(...allY) + 15;
+      const headLeft = Math.min(...allX) - headPadH;
+      const headRight = Math.max(...allX) + headPadH;
+      const headTop = Math.min(...allY) - headPadV * 1.5;
+      const headBottom = Math.max(...allY) + headPadV;
       
       parts.set('head', {
         x: Math.max(0, headLeft),
@@ -315,12 +325,11 @@ export function getBodyPartsFromKeypoints(
   }
   
   if (leftShoulder && rightShoulder && leftHip && rightHip) {
-    const shoulderY = (leftShoulder.y + rightShoulder.y) / 2;
-    const hipY = (leftHip.y + rightHip.y) / 2;
-    const shoulderWidth = Math.abs(rightShoulder.x - leftShoulder.x);
+    const shoulderY = Math.min(leftShoulder.y, rightShoulder.y) - bodyPadH;
+    const hipY = Math.max(leftHip.y, rightHip.y) + bodyPadH;
     
-    const bodyX = Math.min(leftShoulder.x, rightShoulder.x) - shoulderWidth * 0.1;
-    const bodyWidth = shoulderWidth * 1.2;
+    const bodyX = Math.min(leftShoulder.x, rightShoulder.x) - bodyPadH;
+    const bodyWidth = Math.abs(rightShoulder.x - leftShoulder.x) + bodyPadH * 2;
     
     parts.set('body', {
       x: Math.max(0, bodyX),
@@ -331,10 +340,11 @@ export function getBodyPartsFromKeypoints(
   }
   
   if (leftShoulder && leftElbow) {
-    const armX = Math.min(leftShoulder.x, leftElbow.x) - 15;
-    const armX2 = Math.max(leftShoulder.x, leftElbow.x) + 15;
-    const armY = Math.min(leftShoulder.y, leftElbow.y) - 10;
-    const armY2 = Math.max(leftShoulder.y, leftElbow.y) + 10;
+    const leftWrist = getKeypoint('left_wrist');
+    const armX = Math.min(leftShoulder.x, leftElbow.x, leftWrist?.x ?? leftElbow.x) - limbPadH;
+    const armX2 = Math.max(leftShoulder.x, leftElbow.x, leftWrist?.x ?? leftElbow.x) + limbPadH;
+    const armY = Math.min(leftShoulder.y, leftElbow.y, leftWrist?.y ?? leftElbow.y) - limbPadV;
+    const armY2 = Math.max(leftShoulder.y, leftElbow.y, leftWrist?.y ?? leftElbow.y) + limbPadV;
     
     parts.set('leftArm', {
       x: Math.max(0, armX),
@@ -345,10 +355,11 @@ export function getBodyPartsFromKeypoints(
   }
   
   if (rightShoulder && rightElbow) {
-    const armX = Math.min(rightShoulder.x, rightElbow.x) - 15;
-    const armX2 = Math.max(rightShoulder.x, rightElbow.x) + 15;
-    const armY = Math.min(rightShoulder.y, rightElbow.y) - 10;
-    const armY2 = Math.max(rightShoulder.y, rightElbow.y) + 10;
+    const rightWrist = getKeypoint('right_wrist');
+    const armX = Math.min(rightShoulder.x, rightElbow.x, rightWrist?.x ?? rightElbow.x) - limbPadH;
+    const armX2 = Math.max(rightShoulder.x, rightElbow.x, rightWrist?.x ?? rightElbow.x) + limbPadH;
+    const armY = Math.min(rightShoulder.y, rightElbow.y, rightWrist?.y ?? rightElbow.y) - limbPadV;
+    const armY2 = Math.max(rightShoulder.y, rightElbow.y, rightWrist?.y ?? rightElbow.y) + limbPadV;
     
     parts.set('rightArm', {
       x: Math.max(0, armX),
@@ -359,10 +370,10 @@ export function getBodyPartsFromKeypoints(
   }
   
   if (leftHip && leftKnee) {
-    const legX = Math.min(leftHip.x, leftKnee.x) - 15;
-    const legX2 = Math.max(leftHip.x, leftKnee.x) + 15;
-    const legY = Math.min(leftHip.y, leftKnee.y) - 5;
-    const legY2 = leftAnkle ? Math.max(leftKnee.y, leftAnkle.y) + 10 : leftKnee.y + 30;
+    const legX = Math.min(leftHip.x, leftKnee.x) - limbPadH;
+    const legX2 = Math.max(leftHip.x, leftKnee.x, leftAnkle?.x ?? leftKnee.x) + limbPadH;
+    const legY = Math.min(leftHip.y, leftKnee.y) - limbPadV;
+    const legY2 = leftAnkle ? Math.max(leftKnee.y, leftAnkle.y) + limbPadV : leftKnee.y + shoulderWidth * 0.6;
     
     parts.set('leftLeg', {
       x: Math.max(0, legX),
@@ -373,10 +384,10 @@ export function getBodyPartsFromKeypoints(
   }
   
   if (rightHip && rightKnee) {
-    const legX = Math.min(rightHip.x, rightKnee.x) - 15;
-    const legX2 = Math.max(rightHip.x, rightKnee.x) + 15;
-    const legY = Math.min(rightHip.y, rightKnee.y) - 5;
-    const legY2 = rightAnkle ? Math.max(rightKnee.y, rightAnkle.y) + 10 : rightKnee.y + 30;
+    const legX = Math.min(rightHip.x, rightKnee.x) - limbPadH;
+    const legX2 = Math.max(rightHip.x, rightKnee.x, rightAnkle?.x ?? rightKnee.x) + limbPadH;
+    const legY = Math.min(rightHip.y, rightKnee.y) - limbPadV;
+    const legY2 = rightAnkle ? Math.max(rightKnee.y, rightAnkle.y) + limbPadV : rightKnee.y + shoulderWidth * 0.6;
     
     parts.set('rightLeg', {
       x: Math.max(0, legX),
@@ -386,7 +397,7 @@ export function getBodyPartsFromKeypoints(
     });
   }
   
-  logger.info('Body parts extracted from keypoints', { partsCount: parts.size });
+  logger.info('Body parts extracted from keypoints', { partsCount: parts.size, shoulderWidth });
   
   return parts;
 }

@@ -341,30 +341,70 @@ export class SkinConverter {
       copyRegionToSkin(skin, flipHorizontal(innerLeg), 24, 52);
     }
     
-    return skin;
+    return this.quantizeSkinColors(skin, 64);
   }
 
   private resizeWithAspectRatio(sourceData: ImageData, targetWidth: number, targetHeight: number): ImageData {
     const result = new ImageData(targetWidth, targetHeight);
-    
-    const xRatio = sourceData.width / targetWidth;
-    const yRatio = sourceData.height / targetHeight;
-    
+    const srcW = sourceData.width;
+    const srcH = sourceData.height;
+
     for (let y = 0; y < targetHeight; y++) {
+      const srcY0 = Math.floor((y / targetHeight) * srcH);
+      const srcY1 = Math.floor(((y + 1) / targetHeight) * srcH);
+
       for (let x = 0; x < targetWidth; x++) {
-        const srcX = Math.floor(x * xRatio);
-        const srcY = Math.floor(y * yRatio);
-        
-        const pixel = getPixel(sourceData, srcX, srcY);
-        setPixel(result, x, y, pixel);
+        const srcX0 = Math.floor((x / targetWidth) * srcW);
+        const srcX1 = Math.floor(((x + 1) / targetWidth) * srcW);
+
+        let sumR = 0, sumG = 0, sumB = 0, sumA = 0, count = 0;
+
+        for (let sy = srcY0; sy < srcY1; sy++) {
+          for (let sx = srcX0; sx < srcX1; sx++) {
+            const p = getPixel(sourceData, sx, sy);
+            if (p.a > 0) {
+              sumR += p.r;
+              sumG += p.g;
+              sumB += p.b;
+              sumA += p.a;
+              count++;
+            }
+          }
+        }
+
+        if (count > 0) {
+          setPixel(result, x, y, {
+            r: Math.round(sumR / count),
+            g: Math.round(sumG / count),
+            b: Math.round(sumB / count),
+            a: Math.round(sumA / count),
+          });
+        }
       }
     }
-    
+
     return result;
   }
 
   private getDefaultBodyParts(boundingBox: BoundingBox): Map<string, BoundingBox> {
     return detectBodyParts(new ImageData(1, 1), boundingBox);
+  }
+
+  private quantizeSkinColors(skinData: ImageData, levels: number): ImageData {
+    const result = new ImageData(skinData.width, skinData.height);
+    const step = 255 / (levels - 1);
+
+    for (let i = 0; i < skinData.data.length; i += 4) {
+      const a = skinData.data[i + 3];
+      if (a < 10) continue;
+
+      result.data[i] = Math.round(Math.round(skinData.data[i] / step) * step);
+      result.data[i + 1] = Math.round(Math.round(skinData.data[i + 1] / step) * step);
+      result.data[i + 2] = Math.round(Math.round(skinData.data[i + 2] / step) * step);
+      result.data[i + 3] = a;
+    }
+
+    return result;
   }
 
   private imageDataToUrl(imageData: ImageData): string {
