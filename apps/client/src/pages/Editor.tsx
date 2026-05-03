@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import { save } from '@tauri-apps/plugin-dialog';
 import { writeFile } from '@tauri-apps/plugin-fs';
+import { useSearchParams } from 'react-router-dom';
 import {
   Button,
   Upload,
@@ -49,6 +50,7 @@ interface ConversionProgress {
 }
 
 function Editor() {
+  const [searchParams] = useSearchParams();
   const [image, setImage] = useState<string | null>(null);
   const [conversionResult, setConversionResult] = useState<ConversionResult | null>(null);
   const [skinName, setSkinName] = useState('我的皮肤');
@@ -60,8 +62,9 @@ function Editor() {
   const [importMode, setImportMode] = useState<ImportMode>('image');
   const [isConverting, setIsConverting] = useState(false);
   const [conversionProgress, setConversionProgress] = useState<ConversionProgress | null>(null);
+  const [editingSkinId, setEditingSkinId] = useState<string | null>(null);
   
-  const { saveSkin, skins, loadSkins } = useSkinStore();
+  const { saveSkin, skins, loadSkins, updateSkin } = useSkinStore();
   const { user, token } = useUserStore();
   
   const [options, setOptions] = useState<Partial<ConversionOptions>>({
@@ -77,6 +80,40 @@ function Editor() {
   useEffect(() => {
     loadSkins();
   }, [loadSkins]);
+
+  useEffect(() => {
+    const skinId = searchParams.get('skin');
+    if (skinId && skins.length > 0) {
+      const skinToEdit = skins.find(s => s.id === skinId);
+      if (skinToEdit) {
+        setEditingSkinId(skinId);
+        setSkinName(skinToEdit.name);
+        setSkinDescription(skinToEdit.description || '');
+        setImage(skinToEdit.skinData);
+        setImportMode('skin');
+        
+        const img = new window.Image();
+        img.src = skinToEdit.skinData;
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          canvas.width = 64;
+          canvas.height = 64;
+          const ctx = canvas.getContext('2d')!;
+          ctx.drawImage(img, 0, 0, 64, 64);
+          
+          const skinData = ctx.getImageData(0, 0, 64, 64);
+          setConversionResult({
+            skinData,
+            skinUrl: skinToEdit.skinData,
+            previewUrl: skinToEdit.previewData || skinToEdit.skinData,
+            bodyParts: new Map(),
+            boundingBox: { x: 0, y: 0, width: 64, height: 64 },
+          });
+        };
+        logger.info('Editing existing skin', { id: skinId, name: skinToEdit.name });
+      }
+    }
+  }, [searchParams, skins]);
 
   const handleImageUpload = async (file: UploadFile) => {
     const reader = new FileReader();
@@ -111,10 +148,18 @@ function Editor() {
         const skinData = ctx.getImageData(0, 0, 64, 64);
         const skinUrl = canvas.toDataURL('image/png');
         
+        const previewCanvas = document.createElement('canvas');
+        previewCanvas.width = 256;
+        previewCanvas.height = 256;
+        const previewCtx = previewCanvas.getContext('2d')!;
+        previewCtx.imageSmoothingEnabled = false;
+        previewCtx.drawImage(img, 0, 0, 256, 256);
+        const previewUrl = previewCanvas.toDataURL('image/png');
+        
         setConversionResult({
           skinData,
           skinUrl,
-          previewUrl: skinUrl,
+          previewUrl,
           bodyParts: new Map(),
           boundingBox: { x: 0, y: 0, width: 64, height: 64 },
         });
@@ -200,49 +245,60 @@ function Editor() {
 
     setIsSaving(true);
     try {
-      if (saveTarget === 'local' || saveTarget === 'both') {
-        const savedSkin = await saveSkin(
-          skinName,
-          conversionResult.skinUrl,
-          conversionResult.previewUrl,
-          skinDescription
-        );
-        if (savedSkin) {
-          message.success('皮肤已保存到本地皮肤库！');
-          logger.info('Skin saved to local storage');
-        } else {
-          message.error('保存到本地失败');
-          return;
-        }
-      }
-      
-      if (saveTarget === 'server' || saveTarget === 'both') {
-        if (!user || !token) {
-          message.warning('请先登录以保存到云端');
-          return;
+      if (editingSkinId) {
+        updateSkin(editingSkinId, {
+          name: skinName,
+          description: skinDescription,
+          skinData: conversionResult.skinUrl,
+          previewData: conversionResult.previewUrl,
+        });
+        message.success('皮肤已更新！');
+        logger.info('Skin updated', { id: editingSkinId });
+      } else {
+        if (saveTarget === 'local' || saveTarget === 'both') {
+          const savedSkin = await saveSkin(
+            skinName,
+            conversionResult.skinUrl,
+            conversionResult.previewUrl,
+            skinDescription
+          );
+          if (savedSkin) {
+            message.success('皮肤已保存到本地皮肤库！');
+            logger.info('Skin saved to local storage');
+          } else {
+            message.error('保存到本地失败');
+            return;
+          }
         }
         
-        try {
-          const blob = skinConverter.dataUrlToBlob(conversionResult.skinUrl);
-          const file = new File([blob], `${skinName}.png`, { type: 'image/png' });
-          const uploadResult = await apiService.uploadSkin(file);
+        if (saveTarget === 'server' || saveTarget === 'both') {
+          if (!user || !token) {
+            message.warning('请先登录以保存到云端');
+            return;
+          }
           
-          await apiService.createSkin({
-            name: skinName,
-            description: skinDescription,
-            filePath: uploadResult.path,
-            previewPath: conversionResult.previewUrl,
-            isPublic: false,
-          });
-          
-          message.success('皮肤已保存到云端！');
-          logger.info('Skin saved to cloud');
-        } catch (serverError) {
-          logger.error('Failed to save to cloud', serverError);
-          if (saveTarget === 'both') {
-            message.warning('本地保存成功，但云端保存失败');
-          } else {
-            message.error('保存到云端失败');
+          try {
+            const blob = skinConverter.dataUrlToBlob(conversionResult.skinUrl);
+            const file = new File([blob], `${skinName}.png`, { type: 'image/png' });
+            const uploadResult = await apiService.uploadSkin(file);
+            
+            await apiService.createSkin({
+              name: skinName,
+              description: skinDescription,
+              filePath: uploadResult.filePath,
+              previewPath: conversionResult.previewUrl,
+              isPublic: false,
+            });
+            
+            message.success('皮肤已保存到云端！');
+            logger.info('Skin saved to cloud');
+          } catch (serverError) {
+            logger.error('Failed to save to cloud', serverError);
+            if (saveTarget === 'both') {
+              message.warning('本地保存成功，但云端保存失败');
+            } else {
+              message.error('保存到云端失败');
+            }
           }
         }
       }
