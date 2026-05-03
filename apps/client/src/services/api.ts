@@ -1,7 +1,8 @@
-import { fetch } from '@tauri-apps/plugin-http';
+import { invoke } from '@tauri-apps/api/core';
 import { logger } from '@/utils/logger';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://superskin.xuanjian.top/api';
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://superskin.xuanjian.top/api';
+const SERVER_BASE_URL = API_BASE_URL.replace('/api', '');
 
 logger.info('API Base URL configured', { url: API_BASE_URL });
 
@@ -13,6 +14,7 @@ interface ApiResponse<T> {
   data?: T;
   meta?: { total: number };
   access_token?: string;
+  token?: string;
   user?: T;
   message?: string;
   statusCode?: number;
@@ -21,82 +23,53 @@ interface ApiResponse<T> {
 async function apiRequest<T>(
   method: 'GET' | 'POST' | 'PUT' | 'DELETE',
   endpoint: string,
-  data?: unknown,
-  isFormData: boolean = false
+  data?: unknown
 ): Promise<T> {
   const url = `${API_BASE_URL}${endpoint}`;
   const token = getStoredToken();
   
-  const headers: Record<string, string> = {};
-  
-  if (!isFormData && data && method !== 'GET') {
-    headers['Content-Type'] = 'application/json';
-  }
-  
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
-  }
-  
-  logger.debug('API Request', { method, url, hasData: !!data });
-  
-  const options: {
-    method: 'GET' | 'POST' | 'PUT' | 'DELETE';
-    headers: Record<string, string>;
-    body?: string;
-  } = {
-    method,
-    headers,
-  };
-  
-  if (data && method !== 'GET') {
-    if (isFormData && data instanceof FormData) {
-      // For FormData, we need to convert to a format Tauri can handle
-      // Tauri HTTP plugin doesn't directly support FormData, so we'll skip Content-Type
-      // and let the browser handle it
-      delete headers['Content-Type'];
-      // Convert FormData to URL-encoded string for Tauri
-      const formEntries: string[] = [];
-      data.forEach((value, key) => {
-        if (typeof value === 'string') {
-          formEntries.push(`${encodeURIComponent(key)}=${encodeURIComponent(value)}`);
-        }
-      });
-      // For file uploads, we need a different approach
-      // Tauri HTTP plugin has limitations with multipart/form-data
-      logger.warn('FormData upload may have limitations in Tauri HTTP plugin');
-    } else {
-      options.body = JSON.stringify(data);
-    }
-  }
+  logger.info('API Request starting', { method, url, hasData: !!data, hasToken: !!token });
   
   try {
-    const response = await fetch(url, options);
+    let responseText: string;
     
-    const responseText = await response.text();
-    
-    if (!response.ok) {
-      const errorData = responseText ? JSON.parse(responseText) : {};
-      logger.error('API Response Error', { 
-        url, 
-        method, 
-        status: response.status, 
-        data: errorData 
-      });
-      throw { 
-        response: { 
-          status: response.status, 
-          data: errorData 
-        }, 
-        message: errorData.message || 'Request failed' 
-      };
+    if (method === 'GET') {
+      responseText = await invoke<string>('http_get', { url, token });
+    } else if (method === 'PUT') {
+      const body = data ? JSON.stringify(data) : '{}';
+      responseText = await invoke<string>('http_post', { url, body, token });
+    } else if (method === 'DELETE') {
+      responseText = await invoke<string>('http_post', { url, body: '{}', token });
+    } else {
+      const body = data ? JSON.stringify(data) : '{}';
+      responseText = await invoke<string>('http_post', { url, body, token });
     }
     
+    logger.info('API Response received', { url, method, responseLength: responseText?.length || 0 });
+    
     const result = responseText ? JSON.parse(responseText) : {};
-    logger.debug('API Response', { status: response.status, url });
     return result;
   } catch (error) {
-    logger.error('API Request Error', { url, method, error });
-    throw error;
+    const errorStr = String(error);
+    logger.error('API Request Error', { url, method, error: errorStr });
+    
+    const match = errorStr.match(/HTTP \d+: (.+)/);
+    if (match) {
+      try {
+        const errorData = JSON.parse(match[1]);
+        throw { 
+          response: { 
+            status: parseInt(errorStr.match(/HTTP (\d+)/)?.[1] || '500'), 
+            data: errorData 
+          }, 
+          message: errorData.message || 'Request failed' 
+        };
+      } catch {
+        throw { message: match[1] };
+      }
+    }
+    
+    throw { message: errorStr };
   }
 }
 
@@ -108,7 +81,7 @@ export interface User {
   token?: string;
 }
 
-export interface Skin {
+export interface ServerSkin {
   id: string;
   name: string;
   description?: string;
@@ -121,18 +94,20 @@ export interface Skin {
 }
 
 export interface UploadResult {
-  path: string;
-  filename: string;
-  url: string;
+  message: string;
+  filePath: string;
+  fileName: string;
+  size: number;
 }
 
 export const apiService = {
   async register(username: string, email: string, password: string): Promise<User> {
     logger.info('Attempting registration', { username, email });
     try {
-      const result = await apiRequest<User>('POST', '/auth/register', { username, email, password });
+      const response = await apiRequest<ApiResponse<User>>('POST', '/auth/register', { username, email, password });
+      const user = response.user || response as unknown as User;
       logger.info('Registration successful', { username });
-      return result;
+      return user;
     } catch (error) {
       logger.error('Registration failed', error);
       throw error;
@@ -143,12 +118,25 @@ export const apiService = {
     logger.info('Attempting login', { username });
     try {
       const response = await apiRequest<ApiResponse<User>>('POST', '/auth/login', { username, password });
-      const { access_token, user } = response;
-      if (access_token) {
-        localStorage.setItem('token', access_token);
+      logger.info('Login response', { 
+        hasToken: !!response.token, 
+        hasAccessToken: !!response.access_token,
+        hasUser: !!response.user,
+        responseKeys: Object.keys(response) 
+      });
+      
+      const { token, access_token, user } = response;
+      const authToken = token || access_token;
+      
+      if (authToken) {
+        localStorage.setItem('token', authToken);
+        logger.info('Token saved to localStorage', { tokenLength: authToken.length });
+      } else {
+        logger.warn('No token in response');
       }
-      logger.info('Login successful', { username });
-      return { ...user, token: access_token } as User;
+      
+      logger.info('Login successful', { username, hasToken: !!authToken });
+      return { ...user, token: authToken } as User;
     } catch (error) {
       logger.error('Login failed', error);
       throw error;
@@ -182,11 +170,36 @@ export const apiService = {
     return await apiRequest<User>('GET', '/auth/profile');
   },
 
-  async uploadSkin(_file: File): Promise<UploadResult> {
-    // Tauri HTTP plugin has limitations with file uploads
-    // For now, return a mock result or implement a different upload method
-    logger.warn('File upload via Tauri HTTP plugin has limitations');
-    throw new Error('文件上传功能暂不可用，请使用本地保存');
+  async uploadSkin(file: File): Promise<UploadResult> {
+    logger.info('Uploading skin to cloud', { filename: file.name, size: file.size });
+    try {
+      const arrayBuffer = await file.arrayBuffer();
+      const base64 = btoa(
+        new Uint8Array(arrayBuffer).reduce(
+          (data, byte) => data + String.fromCharCode(byte),
+          ''
+        )
+      );
+      
+      const url = `${SERVER_BASE_URL}/api/upload/skin`;
+      const token = getStoredToken();
+      
+      logger.info('Uploading to', { url, hasToken: !!token });
+      
+      const responseText = await invoke<string>('http_upload_file', {
+        url,
+        fileData: base64,
+        filename: file.name,
+        token,
+      });
+      
+      const result = JSON.parse(responseText);
+      logger.info('Skin uploaded successfully', { filePath: result.filePath, fileName: result.fileName });
+      return result;
+    } catch (error) {
+      logger.error('Upload failed', error);
+      throw error;
+    }
   },
 
   async createSkin(data: {
@@ -195,10 +208,10 @@ export const apiService = {
     filePath: string;
     previewPath?: string;
     isPublic: boolean;
-  }): Promise<Skin> {
-    logger.info('Creating skin record', { name: data.name });
+  }): Promise<ServerSkin> {
+    logger.info('Creating skin record', { name: data.name, filePath: data.filePath });
     try {
-      const result = await apiRequest<Skin>('POST', '/skins', data);
+      const result = await apiRequest<ServerSkin>('POST', '/skins', data);
       logger.info('Skin created', { id: result.id });
       return result;
     } catch (error) {
@@ -207,10 +220,10 @@ export const apiService = {
     }
   },
 
-  async getSkins(page: number = 1, limit: number = 20): Promise<{ data: Skin[]; meta: { total: number } }> {
+  async getSkins(page: number = 1, limit: number = 20): Promise<{ data: ServerSkin[]; meta: { total: number } }> {
     logger.info('Fetching skins', { page, limit });
     try {
-      const result = await apiRequest<{ data: Skin[]; meta: { total: number } }>('GET', `/skins?page=${page}&limit=${limit}`);
+      const result = await apiRequest<{ data: ServerSkin[]; meta: { total: number } }>('GET', `/skins?page=${page}&limit=${limit}`);
       logger.info('Skins fetched', { count: result.data?.length || 0 });
       return result;
     } catch (error) {
@@ -219,29 +232,30 @@ export const apiService = {
     }
   },
 
-  async getPublicSkins(page: number = 1, limit: number = 20): Promise<{ data: Skin[]; meta: { total: number } }> {
+  async getPublicSkins(page: number = 1, limit: number = 20): Promise<{ data: ServerSkin[]; meta: { total: number } }> {
     logger.info('Fetching public skins', { page, limit });
-    return await apiRequest<{ data: Skin[]; meta: { total: number } }>('GET', `/skins/public?page=${page}&limit=${limit}`);
+    return await apiRequest<{ data: ServerSkin[]; meta: { total: number } }>('GET', `/skins/public?page=${page}&limit=${limit}`);
   },
 
-  async getSkin(id: string): Promise<Skin> {
+  async getSkin(id: string): Promise<ServerSkin> {
     logger.info('Fetching skin', { id });
-    return await apiRequest<Skin>('GET', `/skins/${id}`);
+    return await apiRequest<ServerSkin>('GET', `/skins/${id}`);
   },
 
-  async updateSkin(id: string, data: Partial<Skin>): Promise<Skin> {
+  async updateSkin(id: string, data: Partial<ServerSkin>): Promise<ServerSkin> {
     logger.info('Updating skin', { id });
-    return await apiRequest<Skin>('PUT', `/skins/${id}`, data);
+    return await apiRequest<ServerSkin>('POST', `/skins/${id}`, data);
   },
 
   async deleteSkin(id: string): Promise<void> {
     logger.info('Deleting skin', { id });
-    await apiRequest('DELETE', `/skins/${id}`);
+    await apiRequest('POST', `/skins/${id}`, {});
   },
 
   getSkinUrl(path: string): string {
     if (path.startsWith('http')) return path;
-    return `${API_BASE_URL.replace('/api', '')}/uploads/${path}`;
+    if (path.startsWith('data:')) return path;
+    return `${SERVER_BASE_URL}${path}`;
   },
 };
 
